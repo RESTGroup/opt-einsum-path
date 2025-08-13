@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 lazy_static = { version = "1.5" }
 itertools = { version = "0.14" }
+
+[profile.dev]
+opt-level = 2

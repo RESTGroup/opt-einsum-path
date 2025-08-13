@@ -28,7 +28,7 @@ use std::ops::Index;
 /// ```rust
 /// # use itertools::Itertools;
 /// # use std::collections::HashMap;
-/// # use opt_einsum_path::helper::compute_size_by_dict;
+/// # use opt_einsum_path::helpers::compute_size_by_dict;
 /// let indices = "abbc".chars();
 /// let idx_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
 /// let size = compute_size_by_dict(indices, &idx_dict);
@@ -69,13 +69,17 @@ where
 /// 3. `idx_removed`: The indices that are summed over (removed) during this contraction.
 /// 4. `idx_contract`: All indices involved in the current contraction (from the contracted terms).
 ///
+/// # Counterpart in Python
+///
+/// `opt_einsum.helpers.find_contraction`
+///
 /// # Examples
 ///
 /// **A simple dot product test case**
 ///
 /// ```rust
 /// # use std::collections::BTreeSet;
-/// # use opt_einsum_path::helper::find_contraction;
+/// # use opt_einsum_path::helpers::find_contraction;
 /// let positions = vec![0, 1];
 /// let input_sets = vec!["ab".chars(), "bc".chars()];
 /// let output_set = "ac".chars();
@@ -102,7 +106,7 @@ where
 ///
 /// ```rust
 /// # use std::collections::BTreeSet;
-/// # use opt_einsum_path::helper::find_contraction;
+/// # use opt_einsum_path::helpers::find_contraction;
 /// let positions = vec![0, 2];
 /// let input_sets = vec!["abd".chars(), "ac".chars(), "bdc".chars()];
 /// let output_set = "ac".chars();
@@ -178,7 +182,7 @@ where
 ///
 /// ```rust
 /// # use std::collections::HashMap;
-/// # use opt_einsum_path::helper::flop_count;
+/// # use opt_einsum_path::helpers::flop_count;
 /// # use itertools::Itertools;
 /// let mut size_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
 /// assert_eq!(flop_count("abc".chars(), false, 1, &size_dict), 30);
