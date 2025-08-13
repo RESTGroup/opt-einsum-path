@@ -26,44 +26,27 @@ use std::ops::Index;
 /// In this case, indices and dictionary are both passed by reference.
 ///
 /// ```rust
+/// # use itertools::Itertools;
 /// # use std::collections::HashMap;
 /// # use opt_einsum_path::helper::compute_size_by_dict;
-/// let indices = ['a', 'b', 'b', 'c'];
+/// let indices = "abbc".chars();
 /// let idx_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// let size = compute_size_by_dict(&indices, &idx_dict);
+/// let size = compute_size_by_dict(indices, &idx_dict);
 /// assert_eq!(size, 90);
 /// ```
 ///
 /// Python equivalent:
 ///
 /// ```python
-/// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b':3, 'c':5})
+/// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b': 3, 'c': 5})
 /// 90
 /// ```
-///
-/// **Using a Vec/Array as a dictionary**
-///
-/// In this case, indices should be passed by value (consumed after use).
-///
-/// ```rust
-/// let indices = [0, 2, 1, 1, 3];
-/// let idx_dict = [2, 2, 3, 4];
-/// let size = compute_size_by_dict(indices, &idx_dict);
-/// assert_eq!(size, 96);
-/// ```
-///
-/// Python equivalent:
-///
-/// ```python
-/// >>> opt_einsum.helpers.compute_size_by_dict([0, 2, 1, 1, 3], [2, 2, 3, 4])
-/// 96
-/// ```
-pub fn compute_size_by_dict<K, I, D>(indices: I, idx_dict: &D) -> usize
+pub fn compute_size_by_dict<S, D>(indices: S, idx_dict: &D) -> usize
 where
-    I: IntoIterator<Item = K>,
-    D: Index<K, Output = usize>,
+    S: IntoIterator<Item = char>,
+    D: for<'a> Index<&'a char, Output = usize>,
 {
-    indices.into_iter().map(|k| idx_dict[k]).product()
+    indices.into_iter().map(|k| idx_dict[&k]).product()
 }
 
 /// Finds the contraction details for a given set of input indices, output indices, and positions of
@@ -141,14 +124,13 @@ where
 /// >>> find_contraction(pos, isets, oset)
 /// ({'a', 'c'}, [{'a', 'c'}, {'a', 'c'}], {'b', 'd'}, {'a', 'b', 'c', 'd'})
 /// ```
-pub fn find_contraction<T, S>(
+pub fn find_contraction<S>(
     positions: impl AsRef<[usize]>,
     input_sets: impl AsRef<[S]>,
     output_set: S,
-) -> (BTreeSet<T>, Vec<BTreeSet<T>>, BTreeSet<T>, BTreeSet<T>)
+) -> (BTreeSet<char>, Vec<BTreeSet<char>>, BTreeSet<char>, BTreeSet<char>)
 where
-    T: Clone + Ord,
-    S: Iterator<Item = T> + Clone,
+    S: Iterator<Item = char> + Clone,
 {
     // To developers:
     // - If performance is a concern, consider using `ByteSet` from crate `byte_set` instead (u8 type
@@ -157,8 +139,8 @@ where
     // - `HashSet` is not faster in small sets, and it is not ordered.
     let positions = positions.as_ref().to_vec();
     let mut remaining = vec![];
-    let mut idx_contract = BTreeSet::<T>::new();
-    let mut idx_remain = output_set.clone().collect::<BTreeSet<T>>();
+    let mut idx_contract = BTreeSet::new();
+    let mut idx_remain = output_set.clone().collect::<BTreeSet<char>>();
     for (i, set) in input_sets.as_ref().iter().enumerate() {
         match positions.contains(&i) {
             true => idx_contract.extend(set.clone()),
@@ -199,8 +181,8 @@ where
 /// # use opt_einsum_path::helper::flop_count;
 /// # use itertools::Itertools;
 /// let mut size_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// assert_eq!(flop_count(&"abc".chars().collect_vec(), false, 1, &size_dict), 30);
-/// assert_eq!(flop_count(&"abc".chars().collect_vec(), true, 2, &size_dict), 60);
+/// assert_eq!(flop_count("abc".chars(), false, 1, &size_dict), 30);
+/// assert_eq!(flop_count("abc".chars(), true, 2, &size_dict), 60);
 /// ```
 ///
 /// Python equivalent:
@@ -212,10 +194,10 @@ where
 /// >>> flop_count('abc', True, 2, {'a': 2, 'b':3, 'c':5})
 /// 60
 /// ```
-pub fn flop_count<K, I, D>(idx_contraction: I, inner: bool, num_terms: usize, size_dictionary: &D) -> usize
+pub fn flop_count<S, D>(idx_contraction: S, inner: bool, num_terms: usize, size_dictionary: &D) -> usize
 where
-    I: IntoIterator<Item = K>,
-    D: Index<K, Output = usize>,
+    S: IntoIterator<Item = char>,
+    D: for<'a> Index<&'a char, Output = usize>,
 {
     let overall_size = compute_size_by_dict(idx_contraction, size_dictionary);
     // let mut op_factor = std::cmp::max(1, num_terms - 1); // may underflow
@@ -227,4 +209,10 @@ where
 }
 
 #[test]
-fn playground() {}
+fn playground() {
+    use std::collections::HashMap;
+    let indices = "abbc".chars();
+    let idx_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
+    let size = compute_size_by_dict(indices, &idx_dict);
+    assert_eq!(size, 90);
+}
