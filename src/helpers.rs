@@ -1,7 +1,6 @@
 //! Contains helper functions for opt_einsum testing scripts.
 
-use std::collections::BTreeSet;
-use std::ops::Index;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Computes the product of the elements in indices based on the dictionary
 /// idx_dict.
@@ -27,10 +26,10 @@ use std::ops::Index;
 ///
 /// ```rust
 /// # use itertools::Itertools;
-/// # use std::collections::HashMap;
+/// # use std::collections::BTreeMap;
 /// # use opt_einsum_path::helpers::compute_size_by_dict;
 /// let indices = "abbc".chars();
-/// let idx_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
+/// let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
 /// let size = compute_size_by_dict(indices, &idx_dict);
 /// assert_eq!(size, 90);
 /// ```
@@ -41,12 +40,8 @@ use std::ops::Index;
 /// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b': 3, 'c': 5})
 /// 90
 /// ```
-pub fn compute_size_by_dict<S, D>(indices: S, idx_dict: &D) -> usize
-where
-    S: IntoIterator<Item = char>,
-    D: for<'a> Index<&'a char, Output = usize>,
-{
-    indices.into_iter().map(|k| idx_dict[&k]).product()
+pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &BTreeMap<char, usize>) -> usize {
+    indices.map(|k| idx_dict[k]).product()
 }
 
 /// Finds the contraction details for a given set of input indices, output indices, and positions of
@@ -128,14 +123,11 @@ where
 /// >>> find_contraction(pos, isets, oset)
 /// ({'a', 'c'}, [{'a', 'c'}, {'a', 'c'}], {'b', 'd'}, {'a', 'b', 'c', 'd'})
 /// ```
-pub fn find_contraction<S>(
-    positions: impl AsRef<[usize]>,
-    input_sets: impl AsRef<[S]>,
-    output_set: S,
-) -> (BTreeSet<char>, Vec<BTreeSet<char>>, BTreeSet<char>, BTreeSet<char>)
-where
-    S: Iterator<Item = char> + Clone,
-{
+pub fn find_contraction(
+    positions: &[usize],
+    input_sets: &[&BTreeSet<char>],
+    output_set: &BTreeSet<char>,
+) -> (BTreeSet<char>, Vec<BTreeSet<char>>, BTreeSet<char>, BTreeSet<char>) {
     // To developers:
     // - If performance is a concern, consider using `ByteSet` from crate `byte_set` instead (u8 type
     //   string only).
@@ -144,13 +136,13 @@ where
     let positions = positions.as_ref().to_vec();
     let mut remaining = vec![];
     let mut idx_contract = BTreeSet::new();
-    let mut idx_remain = output_set.clone().collect::<BTreeSet<char>>();
-    for (i, set) in input_sets.as_ref().iter().enumerate() {
+    let mut idx_remain = output_set.clone();
+    for (i, &set) in input_sets.as_ref().iter().enumerate() {
         match positions.contains(&i) {
             true => idx_contract.extend(set.clone()),
             false => {
                 idx_remain.extend(set.clone());
-                remaining.push(set.clone().collect());
+                remaining.push(set.clone());
             },
         }
     }
@@ -198,11 +190,12 @@ where
 /// >>> flop_count('abc', True, 2, {'a': 2, 'b':3, 'c':5})
 /// 60
 /// ```
-pub fn flop_count<S, D>(idx_contraction: S, inner: bool, num_terms: usize, size_dictionary: &D) -> usize
-where
-    S: IntoIterator<Item = char>,
-    D: for<'a> Index<&'a char, Output = usize>,
-{
+pub fn flop_count<'a>(
+    idx_contraction: impl Iterator<Item = &'a char>,
+    inner: bool,
+    num_terms: usize,
+    size_dictionary: &BTreeMap<char, usize>,
+) -> usize {
     let overall_size = compute_size_by_dict(idx_contraction, size_dictionary);
     // let mut op_factor = std::cmp::max(1, num_terms - 1); // may underflow
     let mut op_factor = std::cmp::max(2, num_terms) - 1;
@@ -214,9 +207,9 @@ where
 
 #[test]
 fn playground() {
-    use std::collections::HashMap;
-    let indices = "abbc".chars();
-    let idx_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
-    let size = compute_size_by_dict(indices, &idx_dict);
+    use itertools::Itertools;
+    let indices = "abbc".chars().collect_vec();
+    let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
+    let size = compute_size_by_dict(indices.iter(), &idx_dict);
     assert_eq!(size, 90);
 }
