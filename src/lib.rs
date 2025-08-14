@@ -1,3 +1,4 @@
+pub mod blas;
 pub mod contract;
 pub mod helpers;
 pub mod parser;
@@ -17,7 +18,7 @@ pub use contract::OptimizeKind;
 #[derive(Debug, Clone)]
 pub struct ContractionType {
     pub indices: String,
-    pub idx_rm: char,
+    pub idx_rm: ArrayIndexType,
     pub einsum_str: String,
     pub remaining: Option<Vec<String>>,
     pub do_blas: bool,

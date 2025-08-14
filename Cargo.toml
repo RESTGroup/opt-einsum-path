@@ -9,5 +9,8 @@ itertools = { version = "0.14" }
 rand = { version = "0.9" }
 num = { version = "0.4" }
 
+[dev-dependencies]
+rstest = { version = "0.26" }
+
 [profile.dev]
 opt-level = 2
