@@ -26,11 +26,11 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// ```rust
 /// # use itertools::Itertools;
-/// # use std::collections::BTreeMap;
+/// # use std::collections::{BTreeMap, BTreeSet};
 /// # use opt_einsum_path::helpers::compute_size_by_dict;
-/// let indices = "abbc".chars();
+/// let indices = "abbc".chars().collect::<Vec<char>>();
 /// let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// let size = compute_size_by_dict(indices, &idx_dict);
+/// let size = compute_size_by_dict(indices.iter(), &idx_dict);
 /// assert_eq!(size, 90);
 /// ```
 ///
@@ -75,11 +75,12 @@ pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dic
 /// ```rust
 /// # use std::collections::BTreeSet;
 /// # use opt_einsum_path::helpers::find_contraction;
-/// let positions = vec![0, 1];
-/// let input_sets = vec!["ab".chars(), "bc".chars()];
-/// let output_set = "ac".chars();
+/// let positions = [0, 1];
+/// let input_sets = ["ab".chars().collect(), "bc".chars().collect()];
+/// let input_sets = input_sets.iter().collect::<Vec<_>>();
+/// let output_set = "ac".chars().collect();
 /// let (new_result, remaining, idx_removed, idx_contract) =
-///     find_contraction(positions, input_sets, output_set);
+///     find_contraction(&positions, &input_sets, &output_set);
 /// assert_eq!(new_result, "ac".chars().collect());
 /// assert_eq!(remaining, vec!["ac".chars().collect()]);
 /// assert_eq!(idx_removed, "b".chars().collect());
@@ -102,11 +103,12 @@ pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dic
 /// ```rust
 /// # use std::collections::BTreeSet;
 /// # use opt_einsum_path::helpers::find_contraction;
-/// let positions = vec![0, 2];
-/// let input_sets = vec!["abd".chars(), "ac".chars(), "bdc".chars()];
-/// let output_set = "ac".chars();
+/// let positions = [0, 2];
+/// let input_sets = ["abd".chars().collect(), "ac".chars().collect(), "bdc".chars().collect()];
+/// let input_sets = input_sets.iter().collect::<Vec<_>>();
+/// let output_set = "ac".chars().collect();
 /// let (new_result, remaining, idx_removed, idx_contract) =
-///     find_contraction(positions, input_sets, output_set);
+///     find_contraction(&positions, &input_sets, &output_set);
 /// assert_eq!(new_result, "ac".chars().collect());
 /// assert_eq!(remaining, vec!["ac".chars().collect(), "ac".chars().collect()]);
 /// assert_eq!(idx_removed, "bd".chars().collect());
@@ -147,8 +149,8 @@ pub fn find_contraction(
         }
     }
 
-    let new_result = idx_remain.intersection(&idx_contract).cloned().collect();
-    let idx_removed = idx_contract.difference(&new_result).cloned().collect();
+    let new_result = &idx_remain & &idx_contract;
+    let idx_removed = &idx_contract - &new_result;
     remaining.push(new_result.clone());
     (new_result, remaining, idx_removed, idx_contract)
 }
@@ -173,12 +175,12 @@ pub fn find_contraction(
 /// # Examples
 ///
 /// ```rust
-/// # use std::collections::HashMap;
+/// # use std::collections::BTreeMap;
 /// # use opt_einsum_path::helpers::flop_count;
 /// # use itertools::Itertools;
-/// let mut size_dict = HashMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// assert_eq!(flop_count("abc".chars(), false, 1, &size_dict), 30);
-/// assert_eq!(flop_count("abc".chars(), true, 2, &size_dict), 60);
+/// let mut size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
+/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict), 30);
+/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict), 60);
 /// ```
 ///
 /// Python equivalent:
@@ -207,9 +209,13 @@ pub fn flop_count<'a>(
 
 #[test]
 fn playground() {
-    use itertools::Itertools;
-    let indices = "abbc".chars().collect_vec();
-    let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-    let size = compute_size_by_dict(indices.iter(), &idx_dict);
-    assert_eq!(size, 90);
+    let positions = [0, 1];
+    let input_sets = ["ab".chars().collect(), "bc".chars().collect()];
+    let input_sets = input_sets.iter().collect::<Vec<_>>();
+    let output_set = "ac".chars().collect();
+    let (new_result, remaining, idx_removed, idx_contract) = find_contraction(&positions, &input_sets, &output_set);
+    assert_eq!(new_result, "ac".chars().collect());
+    assert_eq!(remaining, vec!["ac".chars().collect()]);
+    assert_eq!(idx_removed, "b".chars().collect());
+    assert_eq!(idx_contract, "abc".chars().collect());
 }

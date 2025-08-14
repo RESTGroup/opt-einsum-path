@@ -3,19 +3,15 @@
 use crate::*;
 use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Index;
 
 pub trait PathOptimizer {
-    fn optimize_path<S, D>(
+    fn optimize_path(
         &self,
-        inputs: impl AsRef<[S]>,
-        output: S,
-        size_dict: D,
+        inputs: &[&BTreeSet<char>],
+        output: &BTreeSet<char>,
+        size_dict: &BTreeMap<char, usize>,
         memory_limit: Option<usize>,
-    ) -> PathType
-    where
-        S: IntoIterator<Item = char> + Clone,
-        D: for<'c> Index<&'c char, Output = usize>;
+    ) -> PathType;
 }
 
 /// Convert a path with static single assignment ids to a path with recycled linear ids.
@@ -138,11 +134,11 @@ pub fn linear_to_ssa(path: PathType) -> PathType {
 /// ```rust
 /// # use std::collections::BTreeMap;
 /// # use opt_einsum_path::paths::calc_k12_flops;
-/// let inputs = ["abcd".chars(), "ac".chars(), "bdc".chars()];
-/// let output = "ad".chars();
+/// let inputs = [&"abcd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
+/// let output = "ad".chars().collect();
 /// let remaining = [0, 1, 2];
 /// let size_dict = BTreeMap::from([('a', 5), ('b', 2), ('c', 3), ('d', 4)]);
-/// let (k12, cost) = calc_k12_flops(inputs, output, remaining, 0, 2, &size_dict);
+/// let (k12, cost) = calc_k12_flops(&inputs, &output, &remaining, 0, 2, &size_dict);
 /// assert_eq!(k12, "acd".chars().collect());
 /// assert_eq!(cost, 240);
 /// ```
@@ -170,11 +166,11 @@ pub fn calc_k12_flops(
     let k2 = inputs[j];
 
     // Compute union and intersection
-    let either: BTreeSet<char> = k1.union(k2).cloned().collect();
-    let shared: BTreeSet<char> = k1.intersection(k2).cloned().collect();
+    let either = k1 | k2;
+    let shared = k1 & k2;
 
     // Compute keep set
-    let mut keep: BTreeSet<char> = output.clone();
+    let mut keep = output.clone();
     for &idx in remaining {
         if idx != i && idx != j {
             keep.extend(inputs[idx]);
@@ -182,7 +178,7 @@ pub fn calc_k12_flops(
     }
 
     // Compute k12 and cost
-    let k12 = either.intersection(&keep).cloned().collect();
+    let k12 = &either & &keep;
     let inner = !shared.difference(&keep).collect_vec().is_empty();
     let cost = helpers::flop_count(either.iter(), inner, 2, size_dict);
 
@@ -212,11 +208,11 @@ pub fn calc_k12_flops(
 /// ```rust
 /// # use std::collections::BTreeMap;
 /// # use opt_einsum_path::paths::_compute_oversize_flops;
-/// let inputs = ["ab".chars(), "bc".chars(), "cd".chars()];
+/// let inputs = [&"ab".chars().collect(), &"bc".chars().collect(), &"cd".chars().collect()];
 /// let remaining = [0, 1, 2];
-/// let output = "ad".chars();
+/// let output = "ad".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 4), ('d', 5)]);
-/// let flops = _compute_oversize_flops(inputs, remaining, output, &size_dict);
+/// let flops = _compute_oversize_flops(&inputs, &remaining, &output, &size_dict);
 /// assert_eq!(flops, 360);  // abcd->ad
 /// ```
 ///
@@ -243,6 +239,92 @@ pub fn _compute_oversize_flops(
     helpers::flop_count(idx_contraction.iter(), inner, num_terms, size_dict)
 }
 
+struct _OptimalIterConsts {
+    output: BTreeSet<char>,
+    size_dict: BTreeMap<char, usize>,
+    memory_limit: Option<usize>,
+}
+
+#[allow(clippy::type_complexity)]
+struct _OptimalIterCaches {
+    best_flops: usize,
+    best_ssa_path: Vec<Vec<usize>>,
+    size_cache: BTreeMap<BTreeSet<char>, usize>,
+    result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, usize)>,
+}
+
+fn _optimal_iterate(
+    path: Vec<Vec<usize>>,
+    remaining: &[usize],
+    inputs: &[&BTreeSet<char>],
+    flops: usize,
+    consts: &_OptimalIterConsts,
+    caches: &mut _OptimalIterCaches,
+) {
+    let _OptimalIterConsts { output, size_dict, memory_limit } = &consts;
+
+    // Reached end of path (only get here if flops is best found so far)
+    if remaining.len() == 1 {
+        caches.best_flops = flops;
+        caches.best_ssa_path = path;
+        return;
+    }
+
+    // Generate all possible pairs
+    for i in 0..remaining.len() {
+        for j in (i + 1)..remaining.len() {
+            let a = remaining[i];
+            let b = remaining[j];
+            let (i, j) = if a < b { (a, b) } else { (b, a) };
+
+            let key = (inputs[i].clone(), inputs[j].clone());
+            let (k12, flops12) = caches
+                .result_cache
+                .entry(key.clone())
+                .or_insert_with(|| calc_k12_flops(inputs, output, remaining, i, j, size_dict))
+                .clone();
+
+            // Sieve based on current best flops
+            let new_flops = flops + flops12;
+            if new_flops >= caches.best_flops {
+                continue;
+            }
+
+            // Sieve based on memory limit
+            if let Some(limit) = memory_limit {
+                let size12 = caches
+                    .size_cache
+                    .entry(k12.clone())
+                    .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
+
+                // Possibly terminate this path with an all-terms einsum
+                if *size12 > *limit {
+                    let oversize_flops = flops + _compute_oversize_flops(inputs, remaining, output, size_dict);
+                    if oversize_flops < caches.best_flops {
+                        caches.best_flops = oversize_flops;
+                        let mut new_path = path.clone();
+                        new_path.push(remaining.to_vec());
+                        caches.best_ssa_path = new_path;
+                    }
+                    continue;
+                }
+            }
+
+            // Add contraction and recurse
+            let mut new_remaining = remaining.to_vec();
+            new_remaining.retain(|&x| x != i && x != j);
+            new_remaining.push(inputs.len());
+            let mut new_inputs = inputs.to_vec();
+            new_inputs.push(&k12);
+
+            let mut new_path = path.clone();
+            new_path.push(vec![i, j]);
+
+            _optimal_iterate(new_path, &new_remaining, &new_inputs, new_flops, consts, caches);
+        }
+    }
+}
+
 /// Computes all possible pair contractions in a depth-first recursive manner,
 /// sieving results based on `memory_limit` and the best path found so far.
 ///
@@ -262,10 +344,10 @@ pub fn _compute_oversize_flops(
 /// ```rust
 /// # use std::collections::BTreeMap;
 /// # use opt_einsum_path::paths::optimal;
-/// let inputs = vec!["abd".chars(), "ac".chars(), "bdc".chars()];
-/// let output = "".chars();
+/// let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
+/// let output = "".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-/// let path = optimal(inputs, output, &size_dict, Some(5000));
+/// let path = optimal(&inputs, &output, &size_dict, Some(5000));
 /// assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
 /// ```
 ///
@@ -285,100 +367,14 @@ pub fn optimal(
     size_dict: &BTreeMap<char, usize>,
     memory_limit: Option<usize>,
 ) -> PathType {
-    struct Consts {
-        output: BTreeSet<char>,
-        size_dict: BTreeMap<char, usize>,
-        memory_limit: Option<usize>,
-    }
-    let consts = Consts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
-
-    type ResultCacheType = BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, usize)>;
-    struct Caches {
-        best_flops: usize,
-        best_ssa_path: Vec<Vec<usize>>,
-        size_cache: BTreeMap<BTreeSet<char>, usize>,
-        result_cache: ResultCacheType,
-    }
-
     let best_flops = usize::MAX;
     let best_ssa_path: Vec<Vec<usize>> = (0..inputs.len()).map(|i| vec![i]).collect();
     let size_cache = BTreeMap::new();
     let result_cache = BTreeMap::new();
-    let mut caches = Caches { best_flops, best_ssa_path, size_cache, result_cache };
+    let consts = _OptimalIterConsts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
+    let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache, result_cache };
 
-    fn optimal_iterate(
-        path: Vec<Vec<usize>>,
-        remaining: &[usize],
-        inputs: &[&BTreeSet<char>],
-        flops: usize,
-        consts: &Consts,
-        caches: &mut Caches,
-    ) {
-        let Consts { output, size_dict, memory_limit } = &consts;
-
-        // Reached end of path (only get here if flops is best found so far)
-        if remaining.len() == 1 {
-            caches.best_flops = flops;
-            caches.best_ssa_path = path;
-            return;
-        }
-
-        // Generate all possible pairs
-        for i in 0..remaining.len() {
-            for j in (i + 1)..remaining.len() {
-                let a = remaining[i];
-                let b = remaining[j];
-                let (i, j) = if a < b { (a, b) } else { (b, a) };
-
-                let key = (inputs[i].clone(), inputs[j].clone());
-                let (k12, flops12) = caches
-                    .result_cache
-                    .entry(key.clone())
-                    .or_insert_with(|| calc_k12_flops(inputs, output, remaining, i, j, size_dict))
-                    .clone();
-
-                // Sieve based on current best flops
-                let new_flops = flops + flops12;
-                if new_flops >= caches.best_flops {
-                    continue;
-                }
-
-                // Sieve based on memory limit
-                if let Some(limit) = memory_limit {
-                    let size12 = caches
-                        .size_cache
-                        .entry(k12.clone())
-                        .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
-
-                    // Possibly terminate this path with an all-terms einsum
-                    if *size12 > *limit {
-                        let oversize_flops = flops + _compute_oversize_flops(inputs, remaining, output, size_dict);
-                        if oversize_flops < caches.best_flops {
-                            caches.best_flops = oversize_flops;
-                            let mut new_path = path.clone();
-                            new_path.push(remaining.to_vec());
-                            caches.best_ssa_path = new_path;
-                        }
-                        continue;
-                    }
-                }
-
-                // Add contraction and recurse
-                let mut new_remaining = remaining.to_vec();
-                new_remaining.retain(|&x| x != i && x != j);
-                new_remaining.push(inputs.len());
-                let mut new_inputs = inputs.to_vec();
-                new_inputs.push(&k12);
-
-                let mut new_path = path.clone();
-                new_path.push(vec![i, j]);
-
-                optimal_iterate(new_path, &new_remaining, &new_inputs, new_flops, consts, caches);
-            }
-        }
-    }
-
-    optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0, &consts, &mut caches);
+    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0, &consts, &mut caches);
     let best_ssa_path = caches.best_ssa_path;
     ssa_to_linear(best_ssa_path)
 }
