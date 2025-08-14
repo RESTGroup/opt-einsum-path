@@ -19,9 +19,9 @@ mod tests {
         let (inputs, output, size_dict) = prepare_explicit_path_tests("GEMM1");
         let inputs = inputs.iter().map(|s| s.chars().collect()).collect_vec();
         let inputs_ref = inputs.iter().collect_vec();
-        let path = optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(5000.0));
+        let path = optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(5000));
         assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
-        let path = optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(0.0));
+        let path = optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(0));
         assert_eq!(path, vec![vec![0, 1, 2]]);
     }
 }

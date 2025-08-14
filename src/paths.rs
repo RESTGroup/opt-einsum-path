@@ -246,7 +246,7 @@ pub fn _compute_oversize_flops(
 struct _OptimalIterConsts {
     output: BTreeSet<char>,
     size_dict: BTreeMap<char, usize>,
-    memory_limit: Option<f64>,
+    memory_limit: Option<usize>,
 }
 
 #[allow(clippy::type_complexity)]
@@ -302,7 +302,7 @@ fn _optimal_iterate(
                     .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
 
                 // Possibly terminate this path with an all-terms einsum
-                if *size12 > *limit {
+                if *size12 > *limit as f64 {
                     let oversize_flops = flops + _compute_oversize_flops(inputs, remaining, output, size_dict);
                     if oversize_flops < caches.best_flops {
                         caches.best_flops = oversize_flops;
@@ -351,7 +351,7 @@ fn _optimal_iterate(
 /// let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
 /// let output = "".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-/// let path = optimal(&inputs, &output, &size_dict, Some(5000.0));
+/// let path = optimal(&inputs, &output, &size_dict, Some(5000));
 /// assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
 /// ```
 ///
@@ -369,7 +369,7 @@ pub fn optimal(
     inputs: &[&BTreeSet<char>],
     output: &BTreeSet<char>,
     size_dict: &BTreeMap<char, usize>,
-    memory_limit: Option<f64>,
+    memory_limit: Option<usize>,
 ) -> PathType {
     let best_flops = f64::INFINITY;
     let best_ssa_path = (0..inputs.len()).map(|i| vec![i]).collect();
@@ -392,7 +392,7 @@ impl PathOptimizer for Optimal {
         size_dict: &BTreeMap<char, usize>,
         memory_limit: Option<usize>,
     ) -> PathType {
-        optimal(inputs, output, size_dict, memory_limit.map(|x| x as f64))
+        optimal(inputs, output, size_dict, memory_limit)
     }
 }
 
@@ -737,7 +737,7 @@ fn playground() {
     let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
     let output = "".chars().collect();
     let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-    let path = optimal(&inputs, &output, &size_dict, Some(5000.0));
+    let path = optimal(&inputs, &output, &size_dict, Some(5000));
     assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
     let duration = time.elapsed();
     println!("Optimal path found in: {duration:?}");
