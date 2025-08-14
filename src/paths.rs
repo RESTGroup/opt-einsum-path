@@ -16,6 +16,8 @@ pub trait PathOptimizer {
     ) -> PathType;
 }
 
+/* #region common utilities */
+
 /// Convert a path with static single assignment ids to a path with recycled linear ids.
 ///
 /// # Counterpart in Python
@@ -241,6 +243,10 @@ pub fn _compute_oversize_flops(
     helpers::flop_count(idx_contraction.iter(), inner, num_terms, size_dict)
 }
 
+/* #endregion */
+
+/* #region optimal */
+
 struct _OptimalIterConsts {
     output: BTreeSet<char>,
     size_dict: BTreeMap<char, usize>,
@@ -379,6 +385,24 @@ pub fn optimal(
     _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0.0, &consts, &mut caches);
     ssa_to_linear(&caches.best_ssa_path)
 }
+
+pub struct Optimal;
+
+impl PathOptimizer for Optimal {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&BTreeSet<char>],
+        output: &BTreeSet<char>,
+        size_dict: &BTreeMap<char, usize>,
+        memory_limit: Option<usize>,
+    ) -> PathType {
+        optimal(inputs, output, size_dict, memory_limit.map(|x| x as f64))
+    }
+}
+
+/* #endregion */
+
+/* #region branch bound */
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinimizeStrategy {
@@ -702,6 +726,8 @@ impl PathOptimizer for BranchBound {
         self.path()
     }
 }
+
+/* #endregion */
 
 #[test]
 fn playground() {
