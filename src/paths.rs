@@ -1,10 +1,6 @@
 //! Contains the path technology behind opt_einsum in addition to several path helpers.
 
 use crate::*;
-use itertools::Itertools;
-use num::ToPrimitive;
-use rand::Rng;
-use std::collections::{BTreeMap, BTreeSet};
 
 pub trait PathOptimizer {
     fn optimize_path(
@@ -477,7 +473,6 @@ impl BranchBound {
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
-use std::usize;
 
 impl PathOptimizer for BranchBound {
     fn optimize_path(
@@ -494,12 +489,15 @@ impl PathOptimizer for BranchBound {
         let mut size_cache: BTreeMap<BTreeSet<char>, f64> =
             inputs.iter().map(|&k| (k.clone(), helpers::compute_size_by_dict(k.iter(), size_dict))).collect();
 
+        #[allow(clippy::type_complexity)]
         let mut result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)> = BTreeMap::new();
 
         // Convert inputs to Vec of owned sets for easier manipulation
         let inputs: Vec<BTreeSet<char>> = inputs.iter().map(|s| (*s).clone()).collect();
 
         // Inner recursive function
+        #[allow(clippy::too_many_arguments)]
+        #[allow(clippy::type_complexity)]
         fn branch_iterate(
             branch_bound: &mut BranchBound,
             path: &[TensorShapeType],
@@ -533,6 +531,7 @@ impl PathOptimizer for BranchBound {
 
             impl Eq for BranchBoundCandidate {}
 
+            #[allow(clippy::derive_ord_xor_partial_ord)]
             impl Ord for BranchBoundCandidate {
                 fn cmp(&self, other: &Self) -> std::cmp::Ordering {
                     self.cost.partial_cmp(&other.cost).unwrap().reverse()
@@ -540,6 +539,8 @@ impl PathOptimizer for BranchBound {
             }
 
             // Assess a candidate contraction
+            #[allow(clippy::too_many_arguments)]
+            #[allow(clippy::type_complexity)]
             fn assess_candidate(
                 branch_bound: &mut BranchBound,
                 k1: &BTreeSet<char>,
@@ -588,19 +589,19 @@ impl PathOptimizer for BranchBound {
                 }
 
                 // Sieve based on memory limit
-                if let Some(limit) = memory_limit {
-                    if size12 > limit {
-                        // Terminate path here, but check all-terms contract first
-                        let oversize_flops = flops
-                            + _compute_oversize_flops(&inputs.iter().collect::<Vec<_>>(), remaining, output, size_dict);
-                        if oversize_flops < branch_bound.best.flops {
-                            branch_bound.best.flops = oversize_flops;
-                            let mut new_path = path.to_vec();
-                            new_path.push(remaining.to_vec());
-                            branch_bound.best.ssa_path = Some(new_path);
-                        }
-                        return None;
+                if let Some(limit) = memory_limit
+                    && size12 > limit
+                {
+                    // Terminate path here, but check all-terms contract first
+                    let oversize_flops = flops
+                        + _compute_oversize_flops(&inputs.iter().collect::<Vec<_>>(), remaining, output, size_dict);
+                    if oversize_flops < branch_bound.best.flops {
+                        branch_bound.best.flops = oversize_flops;
+                        let mut new_path = path.to_vec();
+                        new_path.push(remaining.to_vec());
+                        branch_bound.best.ssa_path = Some(new_path);
                     }
+                    return None;
                 }
 
                 // Calculate cost heuristic

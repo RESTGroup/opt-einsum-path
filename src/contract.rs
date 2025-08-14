@@ -83,15 +83,7 @@ impl fmt::Display for PathInfo {
             let scale = self.scale_list.get(n).unwrap_or(&0);
             let blas_str = if *do_blas { "BLAS" } else { "" };
 
-            writeln!(
-                f,
-                "\n{:>4} {:>14} {:>22}    {:>width$}",
-                scale,
-                blas_str,
-                einsum_str,
-                remaining_str,
-                width = size_remaining
-            )?;
+            writeln!(f, "\n{scale:>4} {blas_str:>14} {einsum_str:>22}    {remaining_str:>size_remaining$}")?;
         }
 
         Ok(())

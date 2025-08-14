@@ -1,8 +1,12 @@
 pub mod contract;
 pub mod helpers;
+pub mod parser;
 pub mod paths;
 
-use std::collections::{BTreeMap, BTreeSet};
+pub(crate) use itertools::Itertools;
+pub(crate) use num::ToPrimitive;
+pub(crate) use rand::Rng;
+pub(crate) use std::collections::{BTreeMap, BTreeSet};
 
 pub type TensorShapeType = Vec<usize>;
 pub type PathType = Vec<TensorShapeType>;

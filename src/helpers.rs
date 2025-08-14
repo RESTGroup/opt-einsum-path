@@ -1,6 +1,6 @@
 //! Contains helper functions for opt_einsum testing scripts.
 
-use std::collections::{BTreeMap, BTreeSet};
+use crate::*;
 
 /// Computes the product of the elements in indices based on the dictionary
 /// idx_dict.
