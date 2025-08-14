@@ -7,6 +7,7 @@ edition = "2024"
 lazy_static = { version = "1.5" }
 itertools = { version = "0.14" }
 rand = { version = "0.9" }
+num = { version = "0.4" }
 
 [profile.dev]
 opt-level = 2
