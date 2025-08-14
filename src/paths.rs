@@ -2,6 +2,7 @@
 
 use crate::*;
 use itertools::Itertools;
+use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait PathOptimizer {
@@ -24,9 +25,9 @@ pub trait PathOptimizer {
 ///
 /// ```
 /// # use opt_einsum_path::paths::ssa_to_linear;
-/// let ssa_path = vec![vec![0, 3], vec![2, 4], vec![1, 5]];
-/// let linear_path = ssa_to_linear(ssa_path);
-/// assert_eq!(linear_path, vec![vec![0, 3], vec![1, 2], vec![0, 1]]);
+/// let ssa_path = [vec![0, 3], vec![2, 4], vec![1, 5]];
+/// let linear_path = ssa_to_linear(&ssa_path);
+/// assert_eq!(linear_path, &[vec![0, 3], vec![1, 2], vec![0, 1]]);
 /// ```
 ///
 /// Python equivalent:
@@ -36,7 +37,7 @@ pub trait PathOptimizer {
 /// >>> ssa_to_linear([(0, 3), (2, 4), (1, 5)])
 /// [(0, 3), (1, 2), (0, 1)]
 /// ```
-pub fn ssa_to_linear(ssa_path: PathType) -> PathType {
+pub fn ssa_to_linear(ssa_path: &[TensorShapeType]) -> PathType {
     let n = ssa_path.iter().map(|x| x.len()).sum::<usize>() + 1 - ssa_path.len();
     let mut ids = (0..n).collect_vec();
     let mut path = vec![];
@@ -140,7 +141,7 @@ pub fn linear_to_ssa(path: PathType) -> PathType {
 /// let size_dict = BTreeMap::from([('a', 5), ('b', 2), ('c', 3), ('d', 4)]);
 /// let (k12, cost) = calc_k12_flops(&inputs, &output, &remaining, 0, 2, &size_dict);
 /// assert_eq!(k12, "acd".chars().collect());
-/// assert_eq!(cost, 240);
+/// assert_eq!(cost, 240.0);
 /// ```
 ///
 /// Python equivalent:
@@ -161,7 +162,7 @@ pub fn calc_k12_flops(
     i: usize,
     j: usize,
     size_dict: &BTreeMap<char, usize>,
-) -> (BTreeSet<char>, usize) {
+) -> (BTreeSet<char>, f64) {
     let k1 = inputs[i];
     let k2 = inputs[j];
 
@@ -213,7 +214,7 @@ pub fn calc_k12_flops(
 /// let output = "ad".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 4), ('d', 5)]);
 /// let flops = _compute_oversize_flops(&inputs, &remaining, &output, &size_dict);
-/// assert_eq!(flops, 360);  // abcd->ad
+/// assert_eq!(flops, 360.0);  // abcd->ad
 /// ```
 ///
 /// Python equivalent:
@@ -232,7 +233,7 @@ pub fn _compute_oversize_flops(
     remaining: &[usize],
     output: &BTreeSet<char>,
     size_dict: &BTreeMap<char, usize>,
-) -> usize {
+) -> f64 {
     let num_terms = remaining.len();
     let idx_contraction: BTreeSet<char> = remaining.iter().flat_map(|&i| inputs[i].clone()).collect();
     let inner = !idx_contraction.difference(output).collect_vec().is_empty();
@@ -242,22 +243,22 @@ pub fn _compute_oversize_flops(
 struct _OptimalIterConsts {
     output: BTreeSet<char>,
     size_dict: BTreeMap<char, usize>,
-    memory_limit: Option<usize>,
+    memory_limit: Option<f64>,
 }
 
 #[allow(clippy::type_complexity)]
 struct _OptimalIterCaches {
-    best_flops: usize,
+    best_flops: f64,
     best_ssa_path: Vec<Vec<usize>>,
-    size_cache: BTreeMap<BTreeSet<char>, usize>,
-    result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, usize)>,
+    size_cache: BTreeMap<BTreeSet<char>, f64>,
+    result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)>,
 }
 
 fn _optimal_iterate(
     path: Vec<Vec<usize>>,
     remaining: &[usize],
     inputs: &[&BTreeSet<char>],
-    flops: usize,
+    flops: f64,
     consts: &_OptimalIterConsts,
     caches: &mut _OptimalIterCaches,
 ) {
@@ -347,7 +348,7 @@ fn _optimal_iterate(
 /// let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
 /// let output = "".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-/// let path = optimal(&inputs, &output, &size_dict, Some(5000));
+/// let path = optimal(&inputs, &output, &size_dict, Some(5000.0));
 /// assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
 /// ```
 ///
@@ -365,18 +366,88 @@ pub fn optimal(
     inputs: &[&BTreeSet<char>],
     output: &BTreeSet<char>,
     size_dict: &BTreeMap<char, usize>,
-    memory_limit: Option<usize>,
+    memory_limit: Option<f64>,
 ) -> PathType {
-    let best_flops = usize::MAX;
+    let best_flops = f64::INFINITY;
     let best_ssa_path: Vec<Vec<usize>> = (0..inputs.len()).map(|i| vec![i]).collect();
     let size_cache = BTreeMap::new();
     let result_cache = BTreeMap::new();
     let consts = _OptimalIterConsts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
     let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache, result_cache };
 
-    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0, &consts, &mut caches);
-    let best_ssa_path = caches.best_ssa_path;
-    ssa_to_linear(best_ssa_path)
+    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0.0, &consts, &mut caches);
+    ssa_to_linear(&caches.best_ssa_path)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MinimizeStrategy {
+    FlopsFirst,
+    SizeFirst,
+}
+
+/// functions for comparing which of two paths is 'better'.
+pub fn get_better_fn(key: MinimizeStrategy) -> fn(f64, usize, f64, usize) -> bool {
+    match key {
+        MinimizeStrategy::FlopsFirst => {
+            |flops, size, best_flops, best_size| flops < best_flops || (flops == best_flops && size < best_size)
+        },
+        MinimizeStrategy::SizeFirst => {
+            |flops, size, best_flops, best_size| size < best_size || (size == best_size && flops < best_flops)
+        },
+    }
+}
+
+/// Returns the appropriate cost function based on the enum variant
+pub fn memory_removed(jitter: bool) -> fn(usize, usize, usize, usize, usize, usize) -> f64 {
+    match jitter {
+        false => |size12, size1, size2, _k12, _k1, _k2| (size12 - size1 - size2) as f64,
+        true => |size12, size1, size2, _k12, _k1, _k2| {
+            let mut rng = rand::rng();
+            rng.random_range(0.99..1.01) * (size12 - size1 - size2) as f64
+        },
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchBoundBest {
+    pub flops: f64,
+    pub size: f64,
+    pub ssa_path: Option<PathType>,
+}
+
+impl Default for BranchBoundBest {
+    fn default() -> Self {
+        Self { flops: f64::INFINITY, size: f64::INFINITY, ssa_path: None }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct BranchBound {
+    pub nbranch: Option<usize>,
+    pub cutoff_flops_factor: f64,
+    pub better_fn: fn(f64, usize, f64, usize) -> bool,
+    pub cost_fn: fn(usize, usize, usize, usize, usize, usize) -> f64,
+    pub best: BranchBoundBest,
+    pub best_progress: BTreeMap<usize, f64>,
+}
+
+impl Default for BranchBound {
+    fn default() -> Self {
+        Self {
+            nbranch: None,
+            cutoff_flops_factor: 4.0,
+            better_fn: get_better_fn(MinimizeStrategy::FlopsFirst),
+            cost_fn: memory_removed(false),
+            best: BranchBoundBest::default(),
+            best_progress: BTreeMap::new(),
+        }
+    }
+}
+
+impl BranchBound {
+    pub fn path(&self) -> PathType {
+        ssa_to_linear(self.best.ssa_path.as_ref().unwrap_or(&Vec::new()))
+    }
 }
 
 #[test]
@@ -386,7 +457,7 @@ fn playground() {
     let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
     let output = "".chars().collect();
     let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-    let path = optimal(&inputs, &output, &size_dict, Some(5000));
+    let path = optimal(&inputs, &output, &size_dict, Some(5000.0));
     assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
     let duration = time.elapsed();
     println!("Optimal path found in: {duration:?}");

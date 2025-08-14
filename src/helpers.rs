@@ -31,7 +31,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// let indices = "abbc".chars().collect::<Vec<char>>();
 /// let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
 /// let size = compute_size_by_dict(indices.iter(), &idx_dict);
-/// assert_eq!(size, 90);
+/// assert_eq!(size, 90.0);
 /// ```
 ///
 /// Python equivalent:
@@ -40,8 +40,8 @@ use std::collections::{BTreeMap, BTreeSet};
 /// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b': 3, 'c': 5})
 /// 90
 /// ```
-pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &BTreeMap<char, usize>) -> usize {
-    indices.map(|k| idx_dict[k]).product()
+pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &BTreeMap<char, usize>) -> f64 {
+    indices.map(|k| idx_dict[k] as f64).product()
 }
 
 /// Finds the contraction details for a given set of input indices, output indices, and positions of
@@ -179,8 +179,8 @@ pub fn find_contraction(
 /// # use opt_einsum_path::helpers::flop_count;
 /// # use itertools::Itertools;
 /// let mut size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict), 30);
-/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict), 60);
+/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict), 30.0);
+/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict), 60.0);
 /// ```
 ///
 /// Python equivalent:
@@ -197,14 +197,14 @@ pub fn flop_count<'a>(
     inner: bool,
     num_terms: usize,
     size_dictionary: &BTreeMap<char, usize>,
-) -> usize {
+) -> f64 {
     let overall_size = compute_size_by_dict(idx_contraction, size_dictionary);
     // let mut op_factor = std::cmp::max(1, num_terms - 1); // may underflow
     let mut op_factor = std::cmp::max(2, num_terms) - 1;
     if inner {
         op_factor += 1;
     }
-    overall_size * op_factor
+    overall_size * op_factor as f64
 }
 
 #[test]
