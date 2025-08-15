@@ -26,12 +26,13 @@ use crate::*;
 ///
 /// ```rust
 /// # use itertools::Itertools;
+/// # use num::ToPrimitive;
 /// # use std::collections::{BTreeMap, BTreeSet};
 /// # use opt_einsum_path::helpers::compute_size_by_dict;
 /// let indices = "abbc".chars().collect::<Vec<char>>();
 /// let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
 /// let size = compute_size_by_dict(indices.iter(), &idx_dict);
-/// assert_eq!(size, 90.0);
+/// assert_eq!(size.to_usize().unwrap(), 90);
 /// ```
 ///
 /// Python equivalent:
@@ -40,8 +41,8 @@ use crate::*;
 /// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b': 3, 'c': 5})
 /// 90
 /// ```
-pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &BTreeMap<char, usize>) -> f64 {
-    indices.map(|k| idx_dict[k] as f64).product()
+pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &SizeDictType) -> SizeType {
+    indices.map(|k| SizeType::from_usize(idx_dict[k]).unwrap()).product()
 }
 
 /// Finds the contraction details for a given set of input indices, output indices, and positions of
@@ -127,9 +128,9 @@ pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dic
 /// ```
 pub fn find_contraction(
     positions: &[usize],
-    input_sets: &[&BTreeSet<char>],
-    output_set: &BTreeSet<char>,
-) -> (BTreeSet<char>, Vec<BTreeSet<char>>, BTreeSet<char>, BTreeSet<char>) {
+    input_sets: &[&ArrayIndexType],
+    output_set: &ArrayIndexType,
+) -> (ArrayIndexType, Vec<ArrayIndexType>, ArrayIndexType, ArrayIndexType) {
     // To developers:
     // - If performance is a concern, consider using `ByteSet` from crate `byte_set` instead (u8 type
     //   string only).
@@ -176,11 +177,14 @@ pub fn find_contraction(
 ///
 /// ```rust
 /// # use std::collections::BTreeMap;
+/// # use num::ToPrimitive;
 /// # use opt_einsum_path::helpers::flop_count;
 /// # use itertools::Itertools;
 /// let mut size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict), 30.0);
-/// assert_eq!(flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict), 60.0);
+/// let flops = flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict);
+/// assert_eq!(flops.to_usize().unwrap(), 30);
+/// let flops = flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict);
+/// assert_eq!(flops.to_usize().unwrap(), 60);
 /// ```
 ///
 /// Python equivalent:
@@ -196,15 +200,15 @@ pub fn flop_count<'a>(
     idx_contraction: impl Iterator<Item = &'a char>,
     inner: bool,
     num_terms: usize,
-    size_dictionary: &BTreeMap<char, usize>,
-) -> f64 {
+    size_dictionary: &SizeDictType,
+) -> SizeType {
     let overall_size = compute_size_by_dict(idx_contraction, size_dictionary);
     // let mut op_factor = std::cmp::max(1, num_terms - 1); // may underflow
     let mut op_factor = std::cmp::max(2, num_terms) - 1;
     if inner {
         op_factor += 1;
     }
-    overall_size * op_factor as f64
+    overall_size * SizeType::from_usize(op_factor).unwrap()
 }
 
 #[test]

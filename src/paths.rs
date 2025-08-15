@@ -5,10 +5,10 @@ use crate::*;
 pub trait PathOptimizer {
     fn optimize_path(
         &mut self,
-        inputs: &[&BTreeSet<char>],
-        output: &BTreeSet<char>,
-        size_dict: &BTreeMap<char, usize>,
-        memory_limit: Option<usize>,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
     ) -> PathType;
 }
 
@@ -133,6 +133,7 @@ pub fn linear_to_ssa(path: PathType) -> PathType {
 ///
 /// ```rust
 /// # use std::collections::BTreeMap;
+/// # use num::ToPrimitive;
 /// # use opt_einsum_path::paths::calc_k12_flops;
 /// let inputs = [&"abcd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
 /// let output = "ad".chars().collect();
@@ -140,7 +141,7 @@ pub fn linear_to_ssa(path: PathType) -> PathType {
 /// let size_dict = BTreeMap::from([('a', 5), ('b', 2), ('c', 3), ('d', 4)]);
 /// let (k12, cost) = calc_k12_flops(&inputs, &output, &remaining, 0, 2, &size_dict);
 /// assert_eq!(k12, "acd".chars().collect());
-/// assert_eq!(cost, 240.0);
+/// assert_eq!(cost.to_usize().unwrap(), 240);
 /// ```
 ///
 /// Python equivalent:
@@ -155,13 +156,13 @@ pub fn linear_to_ssa(path: PathType) -> PathType {
 /// ({'a', 'c', 'd'}, 240)
 /// ```
 pub fn calc_k12_flops(
-    inputs: &[&BTreeSet<char>],
-    output: &BTreeSet<char>,
+    inputs: &[&ArrayIndexType],
+    output: &ArrayIndexType,
     remaining: &[usize],
     i: usize,
     j: usize,
-    size_dict: &BTreeMap<char, usize>,
-) -> (BTreeSet<char>, f64) {
+    size_dict: &SizeDictType,
+) -> (ArrayIndexType, SizeType) {
     let k1 = inputs[i];
     let k2 = inputs[j];
 
@@ -207,13 +208,14 @@ pub fn calc_k12_flops(
 ///
 /// ```rust
 /// # use std::collections::BTreeMap;
+/// # use num::ToPrimitive;
 /// # use opt_einsum_path::paths::_compute_oversize_flops;
 /// let inputs = [&"ab".chars().collect(), &"bc".chars().collect(), &"cd".chars().collect()];
 /// let remaining = [0, 1, 2];
 /// let output = "ad".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 4), ('d', 5)]);
 /// let flops = _compute_oversize_flops(&inputs, &remaining, &output, &size_dict);
-/// assert_eq!(flops, 360.0);  // abcd->ad
+/// assert_eq!(flops.to_usize().unwrap(), 360);  // abcd->ad
 /// ```
 ///
 /// Python equivalent:
@@ -228,13 +230,13 @@ pub fn calc_k12_flops(
 /// 360
 /// ```
 pub fn _compute_oversize_flops(
-    inputs: &[&BTreeSet<char>],
+    inputs: &[&ArrayIndexType],
     remaining: &[usize],
-    output: &BTreeSet<char>,
-    size_dict: &BTreeMap<char, usize>,
-) -> f64 {
+    output: &ArrayIndexType,
+    size_dict: &SizeDictType,
+) -> SizeType {
     let num_terms = remaining.len();
-    let idx_contraction: BTreeSet<char> = remaining.iter().flat_map(|&i| inputs[i].clone()).collect();
+    let idx_contraction: ArrayIndexType = remaining.iter().flat_map(|&i| inputs[i].clone()).collect();
     let inner = !idx_contraction.difference(output).collect_vec().is_empty();
     helpers::flop_count(idx_contraction.iter(), inner, num_terms, size_dict)
 }
@@ -244,24 +246,24 @@ pub fn _compute_oversize_flops(
 /* #region optimal */
 
 struct _OptimalIterConsts {
-    output: BTreeSet<char>,
-    size_dict: BTreeMap<char, usize>,
-    memory_limit: Option<usize>,
+    output: ArrayIndexType,
+    size_dict: SizeDictType,
+    memory_limit: Option<SizeType>,
 }
 
 #[allow(clippy::type_complexity)]
 struct _OptimalIterCaches {
-    best_flops: f64,
+    best_flops: SizeType,
     best_ssa_path: PathType,
-    size_cache: BTreeMap<BTreeSet<char>, f64>,
-    result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)>,
+    size_cache: BTreeMap<ArrayIndexType, SizeType>,
+    result_cache: BTreeMap<(ArrayIndexType, ArrayIndexType), (ArrayIndexType, SizeType)>,
 }
 
 fn _optimal_iterate(
     path: PathType,
     remaining: &[usize],
-    inputs: &[&BTreeSet<char>],
-    flops: f64,
+    inputs: &[&ArrayIndexType],
+    flops: SizeType,
     consts: &_OptimalIterConsts,
     caches: &mut _OptimalIterCaches,
 ) {
@@ -302,7 +304,7 @@ fn _optimal_iterate(
                     .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
 
                 // Possibly terminate this path with an all-terms einsum
-                if *size12 > *limit as f64 {
+                if *size12 > *limit {
                     let oversize_flops = flops + _compute_oversize_flops(inputs, remaining, output, size_dict);
                     if oversize_flops < caches.best_flops {
                         caches.best_flops = oversize_flops;
@@ -347,11 +349,13 @@ fn _optimal_iterate(
 ///
 /// ```rust
 /// # use std::collections::BTreeMap;
+/// # use opt_einsum_path::typing::*;
+/// # use num::FromPrimitive;
 /// # use opt_einsum_path::paths::optimal;
 /// let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
 /// let output = "".chars().collect();
 /// let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-/// let path = optimal(&inputs, &output, &size_dict, Some(5000));
+/// let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap()));
 /// assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
 /// ```
 ///
@@ -366,19 +370,19 @@ fn _optimal_iterate(
 /// [(0, 2), (0, 1)]
 /// ```
 pub fn optimal(
-    inputs: &[&BTreeSet<char>],
-    output: &BTreeSet<char>,
-    size_dict: &BTreeMap<char, usize>,
-    memory_limit: Option<usize>,
+    inputs: &[&ArrayIndexType],
+    output: &ArrayIndexType,
+    size_dict: &SizeDictType,
+    memory_limit: Option<SizeType>,
 ) -> PathType {
-    let best_flops = f64::INFINITY;
+    let best_flops = SizeType::MAX;
     let best_ssa_path = (0..inputs.len()).map(|i| vec![i]).collect();
     let size_cache = BTreeMap::new();
     let result_cache = BTreeMap::new();
     let consts = _OptimalIterConsts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
     let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache, result_cache };
 
-    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, 0.0, &consts, &mut caches);
+    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, SizeType::zero(), &consts, &mut caches);
     ssa_to_linear(&caches.best_ssa_path)
 }
 
@@ -387,10 +391,10 @@ pub struct Optimal;
 impl PathOptimizer for Optimal {
     fn optimize_path(
         &mut self,
-        inputs: &[&BTreeSet<char>],
-        output: &BTreeSet<char>,
-        size_dict: &BTreeMap<char, usize>,
-        memory_limit: Option<usize>,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
     ) -> PathType {
         optimal(inputs, output, size_dict, memory_limit)
     }
@@ -407,7 +411,7 @@ pub enum MinimizeStrategy {
 }
 
 /// functions for comparing which of two paths is 'better'.
-pub fn get_better_fn(key: MinimizeStrategy) -> fn(f64, usize, f64, usize) -> bool {
+pub fn get_better_fn(key: MinimizeStrategy) -> fn(SizeType, SizeType, SizeType, SizeType) -> bool {
     match key {
         MinimizeStrategy::FlopsFirst => {
             |flops, size, best_flops, best_size| flops < best_flops || (flops == best_flops && size < best_size)
@@ -419,44 +423,44 @@ pub fn get_better_fn(key: MinimizeStrategy) -> fn(f64, usize, f64, usize) -> boo
 }
 
 /// Returns the appropriate cost function based on the enum variant
-pub fn memory_removed(jitter: bool) -> fn(usize, usize, usize, usize, usize, usize) -> f64 {
+pub fn memory_removed(jitter: bool) -> fn(SizeType, SizeType, SizeType, usize, usize, usize) -> SizeType {
     match jitter {
-        false => |size12, size1, size2, _k12, _k1, _k2| (size12 - size1 - size2) as f64,
+        false => |size12, size1, size2, _k12, _k1, _k2| size12 - size1 - size2,
         true => |size12, size1, size2, _k12, _k1, _k2| {
             let mut rng = rand::rng();
-            rng.random_range(0.99..1.01) * (size12 - size1 - size2) as f64
+            SizeType::from_f64(rng.random_range(0.99..1.01) * (size12 - size1 - size2).to_f64().unwrap()).unwrap()
         },
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct BranchBoundBest {
-    pub flops: f64,
-    pub size: usize,
+    pub flops: SizeType,
+    pub size: SizeType,
     pub ssa_path: Option<PathType>,
 }
 
 impl Default for BranchBoundBest {
     fn default() -> Self {
-        Self { flops: f64::INFINITY, size: usize::MAX, ssa_path: None }
+        Self { flops: SizeType::MAX, size: SizeType::MAX, ssa_path: None }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct BranchBound {
     pub nbranch: Option<usize>,
-    pub cutoff_flops_factor: f64,
-    pub better_fn: fn(f64, usize, f64, usize) -> bool,
-    pub cost_fn: fn(usize, usize, usize, usize, usize, usize) -> f64,
+    pub cutoff_flops_factor: SizeType,
+    pub better_fn: fn(SizeType, SizeType, SizeType, SizeType) -> bool,
+    pub cost_fn: fn(SizeType, SizeType, SizeType, usize, usize, usize) -> SizeType,
     pub best: BranchBoundBest,
-    pub best_progress: BTreeMap<usize, f64>,
+    pub best_progress: BTreeMap<usize, SizeType>,
 }
 
 impl Default for BranchBound {
     fn default() -> Self {
         Self {
             nbranch: None,
-            cutoff_flops_factor: 4.0,
+            cutoff_flops_factor: SizeType::from_f64(4.0).unwrap(),
             better_fn: get_better_fn(MinimizeStrategy::FlopsFirst),
             cost_fn: memory_removed(false),
             best: BranchBoundBest::default(),
@@ -477,23 +481,23 @@ use std::collections::BinaryHeap;
 impl PathOptimizer for BranchBound {
     fn optimize_path(
         &mut self,
-        inputs: &[&BTreeSet<char>],
-        output: &BTreeSet<char>,
-        size_dict: &BTreeMap<char, usize>,
-        memory_limit: Option<usize>,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
     ) -> PathType {
         // Reset best state for new optimization
         self.best = BranchBoundBest::default();
         self.best_progress.clear();
 
-        let mut size_cache: BTreeMap<BTreeSet<char>, f64> =
+        let mut size_cache: BTreeMap<ArrayIndexType, SizeType> =
             inputs.iter().map(|&k| (k.clone(), helpers::compute_size_by_dict(k.iter(), size_dict))).collect();
 
         #[allow(clippy::type_complexity)]
-        let mut result_cache: BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)> = BTreeMap::new();
+        let mut result_cache: BTreeMap<(ArrayIndexType, ArrayIndexType), (ArrayIndexType, SizeType)> = BTreeMap::new();
 
         // Convert inputs to Vec of owned sets for easier manipulation
-        let inputs: Vec<BTreeSet<char>> = inputs.iter().map(|s| (*s).clone()).collect();
+        let inputs: Vec<ArrayIndexType> = inputs.iter().map(|s| (*s).clone()).collect();
 
         // Inner recursive function
         #[allow(clippy::too_many_arguments)]
@@ -501,15 +505,15 @@ impl PathOptimizer for BranchBound {
         fn branch_iterate(
             branch_bound: &mut BranchBound,
             path: &[TensorShapeType],
-            inputs: Vec<BTreeSet<char>>,
+            inputs: Vec<ArrayIndexType>,
             remaining: Vec<usize>,
-            flops: f64,
-            size: usize,
-            size_cache: &mut BTreeMap<BTreeSet<char>, f64>,
-            result_cache: &mut BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)>,
-            output: &BTreeSet<char>,
-            size_dict: &BTreeMap<char, usize>,
-            memory_limit: Option<usize>,
+            flops: SizeType,
+            size: SizeType,
+            size_cache: &mut BTreeMap<ArrayIndexType, SizeType>,
+            result_cache: &mut BTreeMap<(ArrayIndexType, ArrayIndexType), (ArrayIndexType, SizeType)>,
+            output: &ArrayIndexType,
+            size_dict: &SizeDictType,
+            memory_limit: Option<SizeType>,
         ) {
             // Reached end of path (only get here if flops is best found so far)
             if remaining.len() == 1 {
@@ -521,12 +525,12 @@ impl PathOptimizer for BranchBound {
 
             #[derive(Debug, Clone, PartialEq, PartialOrd)]
             struct BranchBoundCandidate {
-                cost: f64,
-                flops12: f64,
-                new_flops: f64,
-                new_size: usize,
+                cost: SizeType,
+                flops12: SizeType,
+                new_flops: SizeType,
+                new_size: SizeType,
                 pair: (usize, usize),
-                k12: BTreeSet<char>,
+                k12: ArrayIndexType,
             }
 
             impl Eq for BranchBoundCandidate {}
@@ -543,20 +547,20 @@ impl PathOptimizer for BranchBound {
             #[allow(clippy::type_complexity)]
             fn assess_candidate(
                 branch_bound: &mut BranchBound,
-                k1: &BTreeSet<char>,
-                k2: &BTreeSet<char>,
+                k1: &ArrayIndexType,
+                k2: &ArrayIndexType,
                 i: usize,
                 j: usize,
-                inputs: &[BTreeSet<char>],
+                inputs: &[ArrayIndexType],
                 remaining: &[usize],
-                output: &BTreeSet<char>,
-                size_dict: &BTreeMap<char, usize>,
-                size_cache: &mut BTreeMap<BTreeSet<char>, f64>,
-                result_cache: &mut BTreeMap<(BTreeSet<char>, BTreeSet<char>), (BTreeSet<char>, f64)>,
+                output: &ArrayIndexType,
+                size_dict: &SizeDictType,
+                size_cache: &mut BTreeMap<ArrayIndexType, SizeType>,
+                result_cache: &mut BTreeMap<(ArrayIndexType, ArrayIndexType), (ArrayIndexType, SizeType)>,
                 path: &[TensorShapeType],
-                flops: f64,
-                size: usize,
-                memory_limit: Option<usize>,
+                flops: SizeType,
+                size: SizeType,
+                memory_limit: Option<SizeType>,
             ) -> Option<BranchBoundCandidate> {
                 let key = (k1.clone(), k2.clone());
                 let (k12, flops12) = result_cache
@@ -569,7 +573,6 @@ impl PathOptimizer for BranchBound {
                 let size12 = *size_cache
                     .entry(k12.clone())
                     .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
-                let size12 = size12.to_usize().unwrap();
 
                 let new_flops = flops + flops12;
                 let new_size = size.max(size12);
@@ -581,7 +584,7 @@ impl PathOptimizer for BranchBound {
 
                 // Sieve based on progress relative to best
                 let current_len = inputs.len();
-                let best_progress = branch_bound.best_progress.entry(current_len).or_insert(f64::INFINITY);
+                let best_progress = branch_bound.best_progress.entry(current_len).or_insert(SizeType::MAX);
                 if new_flops < *best_progress {
                     *best_progress = new_flops;
                 } else if new_flops > branch_bound.cutoff_flops_factor * *best_progress {
@@ -605,8 +608,8 @@ impl PathOptimizer for BranchBound {
                 }
 
                 // Calculate cost heuristic
-                let size1 = size_cache[k1].to_usize().unwrap();
-                let size2 = size_cache[k2].to_usize().unwrap();
+                let size1 = size_cache[k1];
+                let size2 = size_cache[k2];
                 let cost = (branch_bound.cost_fn)(size12, size1, size2, k12.len(), k1.len(), k2.len());
 
                 Some(BranchBoundCandidate { cost, flops12, new_flops, new_size, pair: (i, j), k12 })
@@ -715,8 +718,8 @@ impl PathOptimizer for BranchBound {
             &Vec::new(),
             inputs,
             (0..inputs_len).collect(),
-            0.0,
-            0,
+            SizeType::zero(),
+            SizeType::zero(),
             &mut size_cache,
             &mut result_cache,
             output,
@@ -737,7 +740,7 @@ fn playground() {
     let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
     let output = "".chars().collect();
     let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-    let path = optimal(&inputs, &output, &size_dict, Some(5000));
+    let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap()));
     assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
     let duration = time.elapsed();
     println!("Optimal path found in: {duration:?}");

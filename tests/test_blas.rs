@@ -1,6 +1,6 @@
 use opt_einsum_path::blas::can_blas;
+use opt_einsum_path::typing::*;
 use rstest::rstest;
-use std::collections::BTreeSet;
 
 #[rstest]
 // DOT operations
@@ -32,7 +32,7 @@ use std::collections::BTreeSet;
 #[case((vec!["ij" , "ij" ], "ij", ""   ), None                )] // Index sum 2
 fn test_can_blas_(#[case] inp: (Vec<&str>, &str, &str), #[case] benchmark: Option<&'static str>) {
     let (inputs, result, idx_removed) = inp;
-    let idx_removed: BTreeSet<char> = idx_removed.chars().collect();
+    let idx_removed: ArrayIndexType = idx_removed.chars().collect();
     assert_eq!(
         can_blas(&inputs, result, &idx_removed, None),
         benchmark,

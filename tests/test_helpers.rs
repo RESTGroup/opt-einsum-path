@@ -1,5 +1,7 @@
 use itertools::Itertools;
+use num::FromPrimitive;
 use opt_einsum_path::helpers::*;
+use opt_einsum_path::typing::*;
 use std::collections::BTreeMap;
 
 #[cfg(test)]
@@ -12,7 +14,7 @@ mod tests {
         let cases = [("", 1), ("a", 2), ("b", 5), ("z", 0), ("az", 0), ("zbc", 0), ("aaae", 104), ("abcde", 12870)];
         for (s, expected) in cases {
             let size = compute_size_by_dict(s.chars().collect_vec().iter(), &size_dict);
-            assert_eq!(size, expected as f64);
+            assert_eq!(size, SizeType::from_u32(expected).unwrap());
         }
     }
 
@@ -30,7 +32,7 @@ mod tests {
         ];
         for (s, inner, num_terms, expected) in cases {
             let flop_cost = flop_count(s.chars().collect_vec().iter(), inner, num_terms, &size_dict);
-            assert_eq!(flop_cost, expected as f64);
+            assert_eq!(flop_cost, SizeType::from_u32(expected).unwrap());
         }
     }
 }

@@ -14,10 +14,10 @@ pub enum OptimizeKind {
 impl paths::PathOptimizer for OptimizeKind {
     fn optimize_path(
         &mut self,
-        inputs: &[&BTreeSet<char>],
-        output: &BTreeSet<char>,
-        size_dict: &BTreeMap<char, usize>,
-        memory_limit: Option<usize>,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
     ) -> PathType {
         match self {
             OptimizeKind::Optimized => paths::optimal(inputs, output, size_dict, memory_limit),
@@ -50,14 +50,14 @@ pub struct PathInfo {
     pub indices: ArrayIndexType,
     pub path: PathType,
     pub scale_list: Vec<usize>,
-    pub naive_cost: f64,
-    pub opt_cost: f64,
-    pub speedup: f64,
-    pub size_list: Vec<usize>,
+    pub naive_cost: SizeType,
+    pub opt_cost: SizeType,
+    pub speedup: SizeType,
+    pub size_list: Vec<SizeType>,
     pub size_dict: SizeDictType,
     pub shapes: Vec<Vec<usize>>,
     pub equation: String,
-    pub largest_intermediate: f64,
+    pub largest_intermediate: SizeType,
 }
 
 impl PathInfo {
@@ -68,15 +68,15 @@ impl PathInfo {
         indices: ArrayIndexType,
         path: PathType,
         scale_list: Vec<usize>,
-        naive_cost: f64,
-        opt_cost: f64,
-        size_list: Vec<usize>,
+        naive_cost: SizeType,
+        opt_cost: SizeType,
+        size_list: Vec<SizeType>,
         size_dict: SizeDictType,
     ) -> Self {
-        let speedup = naive_cost / opt_cost.max(1.0);
+        let speedup = naive_cost / opt_cost.max(SizeType::one());
         let shapes = input_subscripts.split(',').map(|ks| ks.chars().map(|k| size_dict[&k]).collect()).collect();
         let equation = format!("{input_subscripts}->{output_subscript}");
-        let largest_intermediate = *size_list.iter().max().unwrap_or(&1) as f64;
+        let largest_intermediate = size_list.clone().into_iter().reduce(SizeType::max).unwrap_or(SizeType::one());
 
         Self {
             contraction_list,
@@ -136,7 +136,7 @@ pub fn contract_path<Opt>(
     operands: &[TensorShapeType],
     use_blas: bool,
     mut optimize: Opt,
-    memory_limit: Option<usize>,
+    memory_limit: Option<SizeType>,
 ) -> Result<(PathType, PathInfo), String>
 where
     Opt: PathOptimizer,
@@ -182,14 +182,14 @@ where
     }
 
     // Compute size of each input array plus the output array
-    let _size_list: Vec<f64> = input_list
+    let _size_list: Vec<SizeType> = input_list
         .iter()
         .chain(std::iter::once(&output_subscript.as_str()))
         .map(|&term| helpers::compute_size_by_dict(term.chars().collect_vec().iter(), &size_dict))
         .collect();
 
     let memory_arg = match memory_limit {
-        Some(limit) if limit == usize::MAX => None,
+        Some(limit) if limit == SizeType::MAX => None,
         Some(limit) => Some(limit),
         None => None,
     };
@@ -284,7 +284,7 @@ where
 
     let opt_cost = cost_list.iter().sum();
     let speedup = naive_cost / opt_cost;
-    let largest_intermediate = size_intermediates.iter().cloned().reduce(f64::max).unwrap_or(0.0);
+    let largest_intermediate = size_intermediates.iter().cloned().reduce(SizeType::max).unwrap_or(SizeType::zero());
 
     let path_info = PathInfo {
         contraction_list,
@@ -296,7 +296,7 @@ where
         naive_cost,
         opt_cost,
         speedup,
-        size_list: size_intermediates.iter().map(|&x| x as usize).collect(),
+        size_list: size_intermediates,
         size_dict,
         shapes: input_shapes,
         equation: format!("{input_subscripts}->{output_subscript}"),
