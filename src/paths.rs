@@ -274,7 +274,6 @@ struct _OptimalIterCaches {
     best_flops: SizeType,
     best_ssa_path: PathType,
     size_cache: BTreeMap<ArrayIndexType, SizeType>,
-    result_cache: BTreeMap<(ArrayIndexType, ArrayIndexType), (ArrayIndexType, SizeType)>,
 }
 
 fn _optimal_iterate(
@@ -301,12 +300,7 @@ fn _optimal_iterate(
             let b = remaining[j];
             let (i, j) = if a < b { (a, b) } else { (b, a) };
 
-            let key = (inputs[i].clone(), inputs[j].clone());
-            let (k12, flops12) = caches
-                .result_cache
-                .entry(key.clone())
-                .or_insert_with(|| calc_k12_flops(inputs, output, remaining, i, j, size_dict))
-                .clone();
+            let (k12, flops12) = calc_k12_flops(inputs, output, remaining, i, j, size_dict);
 
             // Sieve based on current best flops
             let new_flops = flops + flops12;
@@ -396,9 +390,8 @@ pub fn optimal(
     let best_flops = SizeType::MAX;
     let best_ssa_path = (0..inputs.len()).map(|i| vec![i]).collect();
     let size_cache = BTreeMap::new();
-    let result_cache = BTreeMap::new();
     let consts = _OptimalIterConsts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
-    let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache, result_cache };
+    let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache };
 
     _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, SizeType::zero(), &consts, &mut caches);
     ssa_to_linear(&caches.best_ssa_path)
