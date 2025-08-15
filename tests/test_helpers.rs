@@ -1,4 +1,3 @@
-use itertools::Itertools;
 use num::FromPrimitive;
 use opt_einsum_path::helpers::*;
 use opt_einsum_path::typing::*;
@@ -13,7 +12,7 @@ mod tests {
         let size_dict = BTreeMap::from([('a', 2), ('b', 5), ('c', 9), ('d', 11), ('e', 13), ('z', 0)]);
         let cases = [("", 1), ("a", 2), ("b", 5), ("z", 0), ("az", 0), ("zbc", 0), ("aaae", 104), ("abcde", 12870)];
         for (s, expected) in cases {
-            let size = compute_size_by_dict(s.chars().collect_vec().iter(), &size_dict);
+            let size = compute_size_by_dict(s.chars(), &size_dict);
             assert_eq!(size, SizeType::from_u32(expected).unwrap());
         }
     }
@@ -31,7 +30,7 @@ mod tests {
             ("abc", true, 2, 2000),
         ];
         for (s, inner, num_terms, expected) in cases {
-            let flop_cost = flop_count(s.chars().collect_vec().iter(), inner, num_terms, &size_dict);
+            let flop_cost = flop_count(s.chars(), inner, num_terms, &size_dict);
             assert_eq!(flop_cost, SizeType::from_u32(expected).unwrap());
         }
     }

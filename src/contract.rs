@@ -185,7 +185,7 @@ where
     let size_list: Vec<SizeType> = input_list
         .iter()
         .chain([output_subscript.as_str()].iter())
-        .map(|&term| helpers::compute_size_by_dict(term.chars().collect_vec().iter(), &size_dict))
+        .map(|&term| helpers::compute_size_by_dict(term.chars(), &size_dict))
         .collect();
     let size_list_max = size_list.iter().max().cloned().unwrap_or(SizeType::zero());
     let memory_arg = match memory_limit.into() {

@@ -29,9 +29,9 @@ use crate::*;
 /// # use num::ToPrimitive;
 /// # use std::collections::{BTreeMap, BTreeSet};
 /// # use opt_einsum_path::helpers::compute_size_by_dict;
-/// let indices = "abbc".chars().collect::<Vec<char>>();
+/// let indices = "abbc".chars();
 /// let idx_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// let size = compute_size_by_dict(indices.iter(), &idx_dict);
+/// let size = compute_size_by_dict(indices, &idx_dict);
 /// assert_eq!(size.to_usize().unwrap(), 90);
 /// ```
 ///
@@ -41,8 +41,11 @@ use crate::*;
 /// >>> opt_einsum.helpers.compute_size_by_dict('abbc', {'a': 2, 'b': 3, 'c': 5})
 /// 90
 /// ```
-pub fn compute_size_by_dict<'a>(indices: impl Iterator<Item = &'a char>, idx_dict: &SizeDictType) -> SizeType {
-    indices.map(|k| SizeType::from_usize(idx_dict[k]).unwrap()).product()
+pub fn compute_size_by_dict<T>(indices: impl Iterator<Item = T>, idx_dict: &SizeDictType) -> SizeType
+where
+    T: Borrow<char>,
+{
+    indices.map(|k| SizeType::from_usize(idx_dict[k.borrow()]).unwrap()).product()
 }
 
 /// Finds the contraction details for a given set of input indices, output indices, and positions of
@@ -181,9 +184,9 @@ pub fn find_contraction(
 /// # use opt_einsum_path::helpers::flop_count;
 /// # use itertools::Itertools;
 /// let mut size_dict = BTreeMap::from([('a', 2), ('b', 3), ('c', 5)]);
-/// let flops = flop_count("abc".chars().collect::<Vec<char>>().iter(), false, 1, &size_dict);
+/// let flops = flop_count("abc".chars(), false, 1, &size_dict);
 /// assert_eq!(flops.to_usize().unwrap(), 30);
-/// let flops = flop_count("abc".chars().collect::<Vec<char>>().iter(), true, 2, &size_dict);
+/// let flops = flop_count("abc".chars(), true, 2, &size_dict);
 /// assert_eq!(flops.to_usize().unwrap(), 60);
 /// ```
 ///
@@ -196,12 +199,15 @@ pub fn find_contraction(
 /// >>> flop_count('abc', True, 2, {'a': 2, 'b':3, 'c':5})
 /// 60
 /// ```
-pub fn flop_count<'a>(
-    idx_contraction: impl Iterator<Item = &'a char>,
+pub fn flop_count<T>(
+    idx_contraction: impl Iterator<Item = T>,
     inner: bool,
     num_terms: usize,
     size_dictionary: &SizeDictType,
-) -> SizeType {
+) -> SizeType
+where
+    T: Borrow<char>,
+{
     let overall_size = compute_size_by_dict(idx_contraction, size_dictionary);
     // let mut op_factor = std::cmp::max(1, num_terms - 1); // may underflow
     let mut op_factor = std::cmp::max(2, num_terms) - 1;

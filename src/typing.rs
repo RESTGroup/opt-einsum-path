@@ -22,6 +22,8 @@ pub enum MemoryLimitType {
     Size(SizeType),
 }
 
+/* #region implementations */
+
 impl From<SizeType> for MemoryLimitType {
     fn from(size: SizeType) -> Self {
         MemoryLimitType::Size(size)
@@ -45,3 +47,5 @@ impl From<&'static str> for MemoryLimitType {
         }
     }
 }
+
+/* #endregion */
