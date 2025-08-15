@@ -1,6 +1,6 @@
 //! Contains the primary optimization and contraction routines.
 
-use crate::{paths::PathOptimizer, *};
+use crate::*;
 
 /* #region OptimizeKind */
 
@@ -52,7 +52,7 @@ pub struct PathInfo {
     pub scale_list: Vec<usize>,
     pub naive_cost: SizeType,
     pub opt_cost: SizeType,
-    pub speedup: SizeType,
+    pub speedup: f64,
     pub size_list: Vec<SizeType>,
     pub size_dict: SizeDictType,
     pub shapes: Vec<Vec<usize>>,
@@ -73,7 +73,7 @@ impl PathInfo {
         size_list: Vec<SizeType>,
         size_dict: SizeDictType,
     ) -> Self {
-        let speedup = naive_cost / opt_cost.max(SizeType::one());
+        let speedup = naive_cost.to_f64().unwrap() / opt_cost.to_f64().unwrap().max(1.0);
         let shapes = input_subscripts.split(',').map(|ks| ks.chars().map(|k| size_dict[&k]).collect()).collect();
         let equation = format!("{input_subscripts}->{output_subscript}");
         let largest_intermediate = size_list.clone().into_iter().reduce(SizeType::max).unwrap_or(SizeType::one());
@@ -120,9 +120,9 @@ impl std::fmt::Display for PathInfo {
 
             let size_remaining = 56usize.saturating_sub(22.max(einsum_str.len()));
             let scale = self.scale_list.get(n).unwrap_or(&0);
-            let blas_str = if *do_blas { "BLAS" } else { "" };
+            let blas_str = do_blas.unwrap_or("");
 
-            writeln!(f, "\n{scale:>4} {blas_str:>14} {einsum_str:>22}    {remaining_str:>size_remaining$}")?;
+            writeln!(f, "{scale:>4} {blas_str:>14} {einsum_str:>22}    {remaining_str:>size_remaining$}")?;
         }
 
         Ok(())
@@ -187,7 +187,7 @@ where
         .chain([output_subscript.as_str()].iter())
         .map(|&term| helpers::compute_size_by_dict(term.chars(), &size_dict))
         .collect();
-    let size_list_max = size_list.iter().max().cloned().unwrap_or(SizeType::zero());
+    let size_list_max = size_list.iter().cloned().reduce(SizeType::max).unwrap_or(SizeType::zero());
     let memory_arg = match memory_limit.into() {
         MemoryLimitType::None => None,
         MemoryLimitType::MaxInput => Some(size_list_max),
@@ -202,8 +202,10 @@ where
 
     // Compute the path
     let path_tuple = if num_ops <= 2 {
+        // Nothing to be optimized
         vec![(0..num_ops).collect()]
     } else {
+        // Use the optimizer to find the best contraction path
         optimize.optimize_path(&input_sets_ref, &output_set, &size_dict, memory_arg)
     };
 
@@ -218,14 +220,10 @@ where
 
     for (cnum, contract_inds) in path_tuple.iter().enumerate() {
         // Make sure we remove inds from right to left
-        let mut sorted_contract_inds = contract_inds.clone();
-        sorted_contract_inds.sort_by(|a, b| b.cmp(a));
+        let mut contract_inds = contract_inds.iter().sorted().rev().cloned().collect_vec();
 
-        let (out_inds, new_input_sets, idx_removed, idx_contract) = helpers::find_contraction(
-            &sorted_contract_inds,
-            &current_input_sets.iter().collect::<Vec<_>>(),
-            &output_set,
-        );
+        let (out_inds, new_input_sets, idx_removed, idx_contract) =
+            helpers::find_contraction(&contract_inds, &current_input_sets.iter().collect_vec(), &output_set);
 
         // Compute cost, scale, and size
         let cost = helpers::flop_count(idx_contract.iter(), !idx_removed.is_empty(), contract_inds.len(), &size_dict);
@@ -233,16 +231,22 @@ where
         scale_list.push(idx_contract.len());
         size_intermediates.push(helpers::compute_size_by_dict(out_inds.iter(), &size_dict));
 
-        let tmp_inputs: Vec<String> =
-            sorted_contract_inds.iter().map(|&i| current_input_list.remove(i).to_string()).collect();
-        let tmp_shapes: Vec<TensorShapeType> =
-            sorted_contract_inds.iter().map(|&i| current_input_shapes.remove(i)).collect();
+        let mut tmp_inputs = contract_inds.iter().map(|&i| current_input_list.remove(i)).collect_vec();
+        let mut tmp_shapes = contract_inds.iter().map(|&i| current_input_shapes.remove(i)).collect_vec();
 
-        let do_blas = if use_blas {
-            // TODO: Implement BLAS check
-            false
-        } else {
-            false
+        // Revert the order to normal
+        contract_inds.reverse();
+        tmp_inputs.reverse();
+        tmp_shapes.reverse();
+
+        let do_blas = match use_blas {
+            true => blas::can_blas(
+                &tmp_inputs.iter().map(|s| s.as_str()).collect_vec(),
+                &out_inds.iter().join(""),
+                &idx_removed,
+                Some(&tmp_shapes),
+            ),
+            false => None,
         };
 
         // Last contraction
@@ -250,8 +254,8 @@ where
             output_subscript.clone()
         } else {
             // use tensordot order to minimize transpositions
-            let all_input_inds: String = tmp_inputs.join("");
-            let mut sorted_out_inds: Vec<char> = out_inds.iter().cloned().collect();
+            let all_input_inds = tmp_inputs.join("");
+            let mut sorted_out_inds = out_inds.iter().cloned().collect_vec();
             sorted_out_inds.sort_by_key(|c| all_input_inds.find(*c));
             sorted_out_inds.into_iter().collect()
         };
@@ -273,17 +277,17 @@ where
         let remaining = if current_input_list.len() <= 20 { Some(current_input_list.clone()) } else { None };
 
         let contraction = ContractionType {
-            indices: sorted_contract_inds.iter().join(","),
+            indices: contract_inds.iter().join(","),
             idx_rm: idx_removed,
             einsum_str,
-            remaining: remaining.map(|v| v.iter().map(|s| s.to_string()).collect()),
+            remaining,
             do_blas,
         };
         contraction_list.push(contraction);
     }
 
-    let opt_cost = cost_list.iter().sum();
-    let speedup = naive_cost / opt_cost;
+    let opt_cost = cost_list.iter().sum::<SizeType>();
+    let speedup = naive_cost.to_f64().unwrap() / opt_cost.to_f64().unwrap().max(1.0);
     let largest_intermediate = size_intermediates.iter().cloned().reduce(SizeType::max).unwrap_or(SizeType::zero());
 
     let path_info = PathInfo {
@@ -317,5 +321,27 @@ fn test_contract_path() {
     assert_eq!(path.len(), 1);
     assert_eq!(path_info.input_subscripts, "ij,jk");
     assert_eq!(path_info.output_subscript, "ik");
+    println!("{path:?}");
     println!("{path_info}");
+    println!("{path_info:?}");
+}
+
+#[test]
+fn test_contract_path_issue() {
+    let b = 64;
+    let g = 8;
+    let k = 4096;
+    let d = 128;
+
+    let a_shape = vec![b, g, k];
+    let v_shape = vec![b, k, d];
+    let s_shape = vec![b, k];
+    let subscripts = "bgk,bkd,bk->bgd";
+    let (path, path_info) =
+        contract_path(subscripts, &[a_shape, v_shape, s_shape], true, OptimizeKind::Optimized, None).unwrap();
+
+    assert_eq!(path.len(), 2);
+    println!("{path:?}");
+    println!("{path_info}");
+    println!("{path_info:?}");
 }

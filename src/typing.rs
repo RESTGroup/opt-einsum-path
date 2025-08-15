@@ -1,6 +1,6 @@
 use crate::*;
 
-pub type SizeType = usize;
+pub type SizeType = f64;
 pub type TensorShapeType = Vec<usize>;
 pub type PathType = Vec<TensorShapeType>;
 pub type ArrayIndexType = BTreeSet<char>;
@@ -13,7 +13,7 @@ pub struct ContractionType {
     pub idx_rm: ArrayIndexType,
     pub einsum_str: String,
     pub remaining: Option<Vec<String>>,
-    pub do_blas: bool,
+    pub do_blas: Option<&'static str>,
 }
 
 pub enum MemoryLimitType {

@@ -1,6 +1,8 @@
 //! Contains the path technology behind opt_einsum in addition to several path helpers.
 
 use crate::*;
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 
 pub trait PathOptimizer {
     fn optimize_path(
@@ -243,6 +245,22 @@ pub fn _compute_oversize_flops(
 
 /* #endregion */
 
+/* #region no optimize */
+
+pub struct NoOptimize;
+
+impl PathOptimizer for NoOptimize {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        _output: &ArrayIndexType,
+        _size_dict: &SizeDictType,
+        _memory_limit: Option<SizeType>,
+    ) -> PathType {
+        vec![(0..inputs.len()).collect()]
+    }
+}
+
 /* #region optimal */
 
 struct _OptimalIterConsts {
@@ -474,9 +492,6 @@ impl BranchBound {
         ssa_to_linear(self.best.ssa_path.as_ref().unwrap_or(&Vec::new()))
     }
 }
-
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 
 impl PathOptimizer for BranchBound {
     fn optimize_path(
@@ -742,6 +757,19 @@ fn playground() {
     let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
     let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap()));
     assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
+    let duration = time.elapsed();
+    println!("Optimal path found in: {duration:?}");
+}
+
+#[test]
+fn playground_issue() {
+    use std::collections::BTreeMap;
+    let time = std::time::Instant::now();
+    let inputs = [&"bgk".chars().collect(), &"bkd".chars().collect(), &"bk".chars().collect()];
+    let output = "bgd".chars().collect();
+    let size_dict = BTreeMap::from([('b', 64), ('g', 8), ('k', 4096), ('d', 128)]);
+    let path = optimal(&inputs, &output, &size_dict, None);
+    println!("{path:?}");
     let duration = time.elapsed();
     println!("Optimal path found in: {duration:?}");
 }
