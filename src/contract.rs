@@ -136,7 +136,7 @@ pub fn contract_path<Opt>(
     operands: &[TensorShapeType],
     use_blas: bool,
     mut optimize: Opt,
-    memory_limit: Option<SizeType>,
+    memory_limit: impl Into<MemoryLimitType>,
 ) -> Result<(PathType, PathInfo), String>
 where
     Opt: PathOptimizer,
@@ -182,16 +182,16 @@ where
     }
 
     // Compute size of each input array plus the output array
-    let _size_list: Vec<SizeType> = input_list
+    let size_list: Vec<SizeType> = input_list
         .iter()
-        .chain(std::iter::once(&output_subscript.as_str()))
+        .chain([output_subscript.as_str()].iter())
         .map(|&term| helpers::compute_size_by_dict(term.chars().collect_vec().iter(), &size_dict))
         .collect();
-
-    let memory_arg = match memory_limit {
-        Some(limit) if limit == SizeType::MAX => None,
-        Some(limit) => Some(limit),
-        None => None,
+    let size_list_max = size_list.iter().max().cloned().unwrap_or(SizeType::zero());
+    let memory_arg = match memory_limit.into() {
+        MemoryLimitType::None => None,
+        MemoryLimitType::MaxInput => Some(size_list_max),
+        MemoryLimitType::Size(size) => Some(size),
     };
 
     let num_ops = input_list.len();
