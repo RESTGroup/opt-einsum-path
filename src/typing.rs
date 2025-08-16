@@ -5,7 +5,7 @@ pub type TensorShapeType = Vec<usize>;
 pub type PathType = Vec<TensorShapeType>;
 pub type ArrayIndexType = BTreeSet<char>;
 pub type SizeDictType = BTreeMap<char, usize>;
-pub use crate::contract::OptimizeKind;
+pub use crate::paths::OptimizeKind;
 
 #[derive(Debug, Clone)]
 pub struct ContractionType {

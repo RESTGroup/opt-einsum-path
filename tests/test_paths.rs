@@ -22,10 +22,14 @@ mod tests {
         let (inputs, output, size_dict) = prepare_explicit_path_tests("GEMM1");
         let inputs = inputs.iter().map(|s| s.chars().collect()).collect_vec();
         let inputs_ref = inputs.iter().collect_vec();
-        let path =
-            optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(SizeType::from_usize(5000).unwrap()));
+        let path = optimal::optimal(
+            &inputs_ref,
+            &output.chars().collect(),
+            &size_dict,
+            Some(SizeType::from_usize(5000).unwrap()),
+        );
         assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
-        let path = optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(SizeType::zero()));
+        let path = optimal::optimal(&inputs_ref, &output.chars().collect(), &size_dict, Some(SizeType::zero()));
         assert_eq!(path, vec![vec![0, 1, 2]]);
     }
 }

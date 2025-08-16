@@ -2,44 +2,6 @@
 
 use crate::*;
 
-/* #region OptimizeKind */
-
-#[non_exhaustive]
-#[derive(Debug, Clone)]
-pub enum OptimizeKind {
-    Optimized,
-    BranchBound(paths::BranchBound),
-}
-
-impl paths::PathOptimizer for OptimizeKind {
-    fn optimize_path(
-        &mut self,
-        inputs: &[&ArrayIndexType],
-        output: &ArrayIndexType,
-        size_dict: &SizeDictType,
-        memory_limit: Option<SizeType>,
-    ) -> PathType {
-        match self {
-            OptimizeKind::Optimized => paths::optimal(inputs, output, size_dict, memory_limit),
-            OptimizeKind::BranchBound(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),
-        }
-    }
-}
-
-impl From<&str> for OptimizeKind {
-    fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "optimized" => OptimizeKind::Optimized,
-            "branchbound" | "branch_bound" | "branch-bound" | "branch bound" => {
-                OptimizeKind::BranchBound(paths::BranchBound::default())
-            },
-            _ => panic!("Unknown optimization kind: {s}"),
-        }
-    }
-}
-
-/* #endregion */
-
 /* #region PathInfo */
 
 #[derive(Debug, Clone)]
