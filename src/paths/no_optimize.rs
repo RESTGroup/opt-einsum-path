@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Debug, Clone, Default)]
 pub struct NoOptimize;
 
 impl PathOptimizer for NoOptimize {

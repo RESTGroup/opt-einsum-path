@@ -278,7 +278,7 @@ fn test_contract_path() {
     let b_shape = vec![4, 4];
     let subscripts = "ij,jk->ik";
     let (path, path_info) =
-        contract_path(subscripts, &[a_shape, b_shape], true, OptimizeKind::Optimized, None).unwrap();
+        contract_path(subscripts, &[a_shape, b_shape], true, OptimizeKind::from("optimal"), None).unwrap();
 
     assert_eq!(path.len(), 1);
     assert_eq!(path_info.input_subscripts, "ij,jk");
@@ -301,7 +301,7 @@ fn test_contract_path_issue_254() {
     let subscripts = "bgk,bkd,bk->bgd";
     let time = std::time::Instant::now();
     let (path, path_info) =
-        contract_path(subscripts, &[a_shape, v_shape, s_shape], true, OptimizeKind::Optimized, None).unwrap();
+        contract_path(subscripts, &[a_shape, v_shape, s_shape], true, OptimizeKind::from("optimal"), None).unwrap();
     println!("Time: {:?}", time.elapsed());
 
     assert_eq!(path.len(), 2);
@@ -325,7 +325,7 @@ fn test_contract_path_issue_248() {
         subscripts,
         &[eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()],
         true,
-        OptimizeKind::Optimized,
+        OptimizeKind::from("optimal"),
         None,
     )
     .unwrap();

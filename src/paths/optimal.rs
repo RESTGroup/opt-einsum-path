@@ -1,5 +1,6 @@
 use crate::*;
 
+#[derive(Debug, Clone)]
 pub struct Optimal {
     // const after build
     output: ArrayIndexType,
