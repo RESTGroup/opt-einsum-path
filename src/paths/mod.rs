@@ -34,7 +34,7 @@ impl paths::PathOptimizer for OptimizeKind {
     ) -> PathType {
         match self {
             OptimizeKind::Optimized => {
-                let mut optimizer = paths::optimal::Optimal;
+                let mut optimizer = paths::optimal::Optimal::default();
                 optimizer.optimize_path(inputs, output, size_dict, memory_limit)
             },
             OptimizeKind::BranchBound(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),

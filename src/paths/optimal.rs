@@ -1,82 +1,87 @@
 use crate::*;
 
-struct _OptimalIterConsts {
+pub struct Optimal {
+    // const after build
     output: ArrayIndexType,
     size_dict: SizeDictType,
     memory_limit: Option<SizeType>,
-}
-
-#[allow(clippy::type_complexity)]
-struct _OptimalIterCaches {
+    // mutable during iteration
     best_flops: SizeType,
     best_ssa_path: PathType,
     size_cache: BTreeMap<ArrayIndexType, SizeType>,
 }
 
-fn _optimal_iterate(
-    path: PathType,
-    remaining: &[usize],
-    inputs: &[&ArrayIndexType],
-    flops: SizeType,
-    consts: &_OptimalIterConsts,
-    caches: &mut _OptimalIterCaches,
-) {
-    let _OptimalIterConsts { output, size_dict, memory_limit } = &consts;
+impl Optimal {
+    fn optimal_iterate(&mut self, path: PathType, remaining: &[usize], inputs: &[&ArrayIndexType], flops: SizeType) {
+        // Reached end of path (only get here if flops is best found so far)
+        if remaining.len() == 1 {
+            self.best_flops = flops;
+            self.best_ssa_path = path;
+            return;
+        }
 
-    // Reached end of path (only get here if flops is best found so far)
-    if remaining.len() == 1 {
-        caches.best_flops = flops;
-        caches.best_ssa_path = path;
-        return;
-    }
+        // Generate all possible pairs
+        for i in 0..remaining.len() {
+            for j in (i + 1)..remaining.len() {
+                let a = remaining[i];
+                let b = remaining[j];
+                let (i, j) = if a < b { (a, b) } else { (b, a) };
 
-    // Generate all possible pairs
-    for i in 0..remaining.len() {
-        for j in (i + 1)..remaining.len() {
-            let a = remaining[i];
-            let b = remaining[j];
-            let (i, j) = if a < b { (a, b) } else { (b, a) };
+                let (k12, flops12) =
+                    paths::util::calc_k12_flops(inputs, &self.output, remaining, i, j, &self.size_dict);
 
-            let (k12, flops12) = paths::util::calc_k12_flops(inputs, output, remaining, i, j, size_dict);
-
-            // Sieve based on current best flops
-            let new_flops = flops + flops12;
-            if new_flops >= caches.best_flops {
-                continue;
-            }
-
-            // Sieve based on memory limit
-            if let Some(limit) = memory_limit {
-                let size12 = caches
-                    .size_cache
-                    .entry(k12.clone())
-                    .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), size_dict));
-
-                // Possibly terminate this path with an all-terms einsum
-                if *size12 > *limit {
-                    let oversize_flops =
-                        flops + paths::util::compute_oversize_flops(inputs, remaining, output, size_dict);
-                    if oversize_flops < caches.best_flops {
-                        caches.best_flops = oversize_flops;
-                        let mut new_path = path.clone();
-                        new_path.push(remaining.to_vec());
-                        caches.best_ssa_path = new_path;
-                    }
+                // Sieve based on current best flops
+                let new_flops = flops + flops12;
+                if new_flops >= self.best_flops {
                     continue;
                 }
+
+                // Sieve based on memory limit
+                if let Some(limit) = self.memory_limit {
+                    let size12 = self
+                        .size_cache
+                        .entry(k12.clone())
+                        .or_insert_with(|| helpers::compute_size_by_dict(k12.iter(), &self.size_dict));
+
+                    // Possibly terminate this path with an all-terms einsum
+                    if *size12 > limit {
+                        let oversize_flops = flops
+                            + paths::util::compute_oversize_flops(inputs, remaining, &self.output, &self.size_dict);
+                        if oversize_flops < self.best_flops {
+                            self.best_flops = oversize_flops;
+                            let mut new_path = path.clone();
+                            new_path.push(remaining.to_vec());
+                            self.best_ssa_path = new_path;
+                        }
+                        continue;
+                    }
+                }
+
+                // Add contraction and recurse
+                let mut new_remaining = remaining.to_vec();
+                new_remaining.retain(|&x| x != i && x != j);
+                new_remaining.push(inputs.len());
+                let mut new_inputs = inputs.to_vec();
+                new_inputs.push(&k12);
+
+                let mut new_path = path.clone();
+                new_path.push(vec![i, j]);
+
+                self.optimal_iterate(new_path, &new_remaining, &new_inputs, new_flops);
             }
+        }
+    }
+}
 
-            // Add contraction and recurse
-            let mut new_remaining = remaining.to_vec();
-            new_remaining.retain(|&x| x != i && x != j);
-            new_remaining.push(inputs.len());
-            let mut new_inputs = inputs.to_vec();
-            new_inputs.push(&k12);
-
-            let mut new_path = path.clone();
-            new_path.push(vec![i, j]);
-
-            _optimal_iterate(new_path, &new_remaining, &new_inputs, new_flops, consts, caches);
+impl Default for Optimal {
+    fn default() -> Self {
+        Optimal {
+            output: ArrayIndexType::default(),
+            size_dict: SizeDictType::default(),
+            memory_limit: None,
+            best_flops: SizeType::MAX,
+            best_ssa_path: Vec::new(),
+            size_cache: BTreeMap::new(),
         }
     }
 }
@@ -125,17 +130,15 @@ pub fn optimal(
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
 ) -> PathType {
-    let best_flops = SizeType::MAX;
-    let best_ssa_path = (0..inputs.len()).map(|i| vec![i]).collect();
-    let size_cache = BTreeMap::new();
-    let consts = _OptimalIterConsts { output: output.clone(), size_dict: size_dict.clone(), memory_limit };
-    let mut caches = _OptimalIterCaches { best_flops, best_ssa_path, size_cache };
+    let mut optimizer =
+        Optimal { output: output.clone(), size_dict: size_dict.clone(), memory_limit, ..Default::default() };
 
-    _optimal_iterate(Vec::new(), &(0..inputs.len()).collect_vec(), inputs, SizeType::zero(), &consts, &mut caches);
-    paths::util::ssa_to_linear(&caches.best_ssa_path)
+    let path = Vec::new();
+    let inputs_indices: Vec<usize> = (0..inputs.len()).collect();
+    let flops = SizeType::zero();
+    optimizer.optimal_iterate(path, &inputs_indices, inputs, flops);
+    paths::util::ssa_to_linear(&optimizer.best_ssa_path)
 }
-
-pub struct Optimal;
 
 impl PathOptimizer for Optimal {
     fn optimize_path(
