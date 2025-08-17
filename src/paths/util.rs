@@ -28,9 +28,12 @@ pub fn ssa_to_linear(ssa_path: &[TensorShapeType]) -> PathType {
     let mut path = vec![];
     let mut ssa = n;
 
+    println!("Converting SSA path to linear path: {ssa_path:?}");
+    println!("Initial ids: {ids:?}");
     for scon in ssa_path {
         // Sort and find positions using search
         let con = scon.iter().map(|&s| ids.binary_search(&s).unwrap()).sorted_unstable().collect_vec();
+        println!("con: {con:?}");
 
         // Remove elements in reverse order to avoid index shifting issues
         for &j in con.iter().rev() {

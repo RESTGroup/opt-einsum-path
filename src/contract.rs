@@ -334,3 +334,29 @@ fn test_contract_path_issue_248() {
     println!("{path:?}");
     println!("{path_info}");
 }
+
+#[test]
+fn test_greedy_issue_248() {
+    let no = 300;
+    let naux = 50;
+    let nx = 2000;
+
+    let m = vec![nx, nx];
+    let eta = vec![no, nx];
+    let eta1 = vec![naux, nx];
+    let theta = vec![naux, no];
+    let subscripts = "iP,sP,PQ,jQ,tQ,ti,sj->";
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(
+        subscripts,
+        &[eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()],
+        true,
+        OptimizeKind::from("greedy"),
+        None,
+    )
+    .unwrap();
+    println!("Time: {:?}", time.elapsed());
+
+    println!("{path:?}");
+    println!("{path_info}");
+}
