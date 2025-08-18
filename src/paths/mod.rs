@@ -60,7 +60,7 @@ impl FromStr for OptimizeKind {
             "branch-2" => BranchBound("branch-2".into()),
             "branch-1" => BranchBound("branch-1".into()),
             "greedy" => Greedy(Default::default()),
-            _ => Err("Unknown optimization kind: {s}")?,
+            _ => Err(format!("Unknown optimization kind: {s}"))?,
         };
         Ok(optimizer)
     }
@@ -78,5 +78,18 @@ impl From<bool> for OptimizeKind {
             true => OptimizeKind::Optimized(Default::default()),
             false => OptimizeKind::NoOptimize(Default::default()),
         }
+    }
+}
+
+impl PathOptimizer for &str {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> PathType {
+        let mut optimizer = OptimizeKind::from(*self);
+        optimizer.optimize_path(inputs, output, size_dict, memory_limit)
     }
 }

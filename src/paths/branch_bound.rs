@@ -1,5 +1,7 @@
 use crate::*;
 
+pub type BetterFn = fn(SizeType, SizeType, SizeType, SizeType) -> bool;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinimizeStrategy {
     FlopsFirst,
@@ -7,7 +9,7 @@ pub enum MinimizeStrategy {
 }
 
 /// functions for comparing which of two paths is 'better'.
-pub fn get_better_fn(key: MinimizeStrategy) -> fn(SizeType, SizeType, SizeType, SizeType) -> bool {
+pub fn get_better_fn(key: MinimizeStrategy) -> BetterFn {
     match key {
         MinimizeStrategy::FlopsFirst => {
             |flops, size, best_flops, best_size| flops < best_flops || (flops == best_flops && size < best_size)
@@ -60,11 +62,11 @@ pub struct BranchBound {
     // parameters
     pub nbranch: Option<usize>,
     pub cutoff_flops_factor: SizeType,
-    pub better_fn: fn(SizeType, SizeType, SizeType, SizeType) -> bool,
+    pub better_fn: BetterFn,
     pub cost_fn: paths::CostFn,
+    // caches
     pub best: BranchBoundBest,
     pub best_progress: BTreeMap<usize, SizeType>,
-    // caches
     size_cache: BTreeMap<ArrayIndexType, SizeType>,
 }
 
@@ -81,9 +83,9 @@ impl Default for BranchBound {
             cutoff_flops_factor: SizeType::from_f64(4.0).unwrap(),
             better_fn: get_better_fn(MinimizeStrategy::FlopsFirst),
             cost_fn: paths::util::memory_removed(false),
+            // caches
             best: BranchBoundBest::default(),
             best_progress: BTreeMap::new(),
-            // caches
             size_cache: BTreeMap::new(),
         }
     }

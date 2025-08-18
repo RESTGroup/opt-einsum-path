@@ -30,7 +30,7 @@ use rstest::rstest;
 #[case((vec!["ijj", "jk" ], "ik", "j"  ), None                )] // Double index
 #[case((vec!["ijk", "j"  ], "ij", ""   ), None                )] // Index sum 1
 #[case((vec!["ij" , "ij" ], "ij", ""   ), None                )] // Index sum 2
-fn test_can_blas_(#[case] inp: (Vec<&str>, &str, &str), #[case] benchmark: Option<&'static str>) {
+fn test_can_blas(#[case] inp: (Vec<&str>, &str, &str), #[case] benchmark: Option<&'static str>) {
     let (inputs, result, idx_removed) = inp;
     let idx_removed: ArrayIndexType = idx_removed.chars().collect();
     assert_eq!(
