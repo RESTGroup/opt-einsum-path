@@ -1,5 +1,7 @@
 use crate::*;
 
+pub type CostFn = fn(SizeType, SizeType, SizeType, usize, usize, usize) -> SizeType;
+
 /// Convert a path with static single assignment ids to a path with recycled linear ids.
 ///
 /// # Counterpart in Python
@@ -28,12 +30,9 @@ pub fn ssa_to_linear(ssa_path: &[TensorShapeType]) -> PathType {
     let mut path = vec![];
     let mut ssa = n;
 
-    println!("Converting SSA path to linear path: {ssa_path:?}");
-    println!("Initial ids: {ids:?}");
     for scon in ssa_path {
         // Sort and find positions using search
         let con = scon.iter().map(|&s| ids.binary_search(&s).unwrap()).sorted_unstable().collect_vec();
-        println!("con: {con:?}");
 
         // Remove elements in reverse order to avoid index shifting issues
         for &j in con.iter().rev() {
@@ -228,4 +227,17 @@ pub fn compute_oversize_flops(
     let idx_contraction: ArrayIndexType = remaining.iter().flat_map(|&i| inputs[i].clone()).collect();
     let inner = !idx_contraction.difference(output).collect_vec().is_empty();
     helpers::flop_count(idx_contraction.iter(), inner, num_terms, size_dict)
+}
+
+/// Cost function that evaluates how much memory to be removed after contraction.
+///
+/// `jitter` is a boolean that determines whether to apply randomness to the memory cost.
+pub fn memory_removed(jitter: bool) -> CostFn {
+    match jitter {
+        false => |size12, size1, size2, _k12, _k1, _k2| size12 - size1 - size2,
+        true => |size12, size1, size2, _k12, _k1, _k2| {
+            let mut rng = rand::rng();
+            SizeType::from_f64(rng.random_range(0.99..1.01) * (size12 - size1 - size2).to_f64().unwrap()).unwrap()
+        },
+    }
 }

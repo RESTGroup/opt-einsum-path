@@ -1,14 +1,22 @@
 use crate::*;
-use itertools::Itertools;
-use std::{
-    cmp::Reverse,
-    collections::{BTreeMap, BTreeSet, BinaryHeap},
-};
 
+pub type GreedyChooseFn =
+    fn(&mut BinaryHeap<GreedyContractionType>, &BTreeMap<ArrayIndexType, usize>) -> Option<GreedyContractionType>;
+
+/// Type representing the cost of a greedy contraction.
+///
+/// Please note that order of cost is not reversed (greater is better).
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct GreedyCostType {
+    /// The cost of the contraction.
+    ///
+    /// Cost is defined as the size of the resulting array after the contraction,
+    /// minus the sizes of the two input arrays being contracted:
+    /// `size(final) - size(input1) - size(input2)`.
     pub cost: SizeType,
+    /// The ID of the first input array being contracted.
     pub id1: usize,
+    /// The ID of the second input array being contracted.
     pub id2: usize,
 }
 
@@ -21,14 +29,22 @@ impl Ord for GreedyCostType {
     }
 }
 
+/// Type representing a greedy contraction candidate.
+///
+/// Order of cost is reversed (less is better).
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct GreedyContractionType {
+    /// The cost of the contraction, wrapped in `Reverse` to reverse the order.
     cost: Reverse<GreedyCostType>,
+    /// The first input array indices being contracted.
     k1: ArrayIndexType,
+    /// The second input array indices being contracted.
     k2: ArrayIndexType,
+    /// The resulting array indices after the contraction.
     k12: ArrayIndexType,
 }
 
+/// Given k1 and k2 tensors, compute the resulting indices k12 and the cost of the contraction.
 fn get_candidate(
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
@@ -37,14 +53,16 @@ fn get_candidate(
     dim_ref_counts: &BTreeMap<usize, BTreeSet<char>>,
     k1: &ArrayIndexType,
     k2: &ArrayIndexType,
-    cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
+    cost_fn: paths::CostFn,
 ) -> GreedyContractionType {
     let either = k1 | k2;
     let two = k1 & k2;
     let one = &either - &two;
 
     // k12 = (either & output) | (two & dim_ref_counts[3]) | (one & dim_ref_counts[2])
+    // indices in output must kept
     let part1 = either.intersection(output);
+    // remaining indices kept if referenced by other tensors
     let part2 = two.intersection(&dim_ref_counts[&3]);
     let part3 = one.intersection(&dim_ref_counts[&2]);
     let k12: ArrayIndexType = part1.chain(part2).chain(part3).cloned().collect();
@@ -52,7 +70,7 @@ fn get_candidate(
     let size12 = helpers::compute_size_by_dict(k12.iter(), size_dict);
     let footprint1 = footprints[k1];
     let footprint2 = footprints[k2];
-    let cost = cost_fn(size12, footprint1, footprint2, &k12, k1, k2);
+    let cost = cost_fn(size12, footprint1, footprint2, 0, 0, 0);
 
     let id1 = remaining[k1];
     let id2 = remaining[k2];
@@ -62,6 +80,7 @@ fn get_candidate(
     GreedyContractionType { cost: Reverse(GreedyCostType { cost, id1, id2 }), k1, k2, k12 }
 }
 
+/// Given k1 and its candidate k2s, push the best candidates to the queue.
 fn push_candidate(
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
@@ -72,7 +91,7 @@ fn push_candidate(
     k2s: &[ArrayIndexType],
     queue: &mut BinaryHeap<GreedyContractionType>,
     push_all: bool,
-    cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
+    cost_fn: paths::CostFn,
 ) {
     let candidates: Vec<GreedyContractionType> = k2s
         .iter()
@@ -86,6 +105,11 @@ fn push_candidate(
     }
 }
 
+/// Update the reference counts for dimensions in `dims` based on their presence in `dim_to_keys`.
+///
+/// Note on `dim_ref_counts`: This is a mapping of
+/// - 0, 1, 2: the indices that appear in exactly that many remaining tensors (excluding output)
+/// - 3: the indices that appear in 3 or more remaining tensors (excluding output)
 fn update_ref_counts(
     dim_to_keys: &BTreeMap<char, BTreeSet<ArrayIndexType>>,
     dim_ref_counts: &mut BTreeMap<usize, BTreeSet<char>>,
@@ -100,21 +124,25 @@ fn update_ref_counts(
 
         match count {
             0..=1 => {
-                dim_ref_counts.entry(2).or_default().remove(dim);
-                dim_ref_counts.entry(3).or_default().remove(dim);
+                dim_ref_counts.get_mut(&2).unwrap().remove(dim);
+                dim_ref_counts.get_mut(&3).unwrap().remove(dim);
             },
             2 => {
-                dim_ref_counts.entry(2).or_default().insert(*dim);
-                dim_ref_counts.entry(3).or_default().remove(dim);
+                dim_ref_counts.get_mut(&2).unwrap().insert(*dim);
+                dim_ref_counts.get_mut(&3).unwrap().remove(dim);
             },
-            _ => {
-                dim_ref_counts.entry(2).or_default().insert(*dim);
-                dim_ref_counts.entry(3).or_default().insert(*dim);
+            3.. => {
+                dim_ref_counts.get_mut(&2).unwrap().insert(*dim);
+                dim_ref_counts.get_mut(&3).unwrap().insert(*dim);
             },
         }
     }
 }
 
+/// Default contraction chooser that simply takes the minimum cost option.
+///
+/// This function will pop candidates only when they are valid (both k1 and k2 must be present in
+/// `remaining`).
 fn simple_chooser(
     queue: &mut BinaryHeap<GreedyContractionType>,
     remaining: &BTreeMap<ArrayIndexType, usize>,
@@ -127,32 +155,46 @@ fn simple_chooser(
     None
 }
 
+/// This is the core function for [`greedy`] but produces a path with static single assignment
+/// ids rather than recycled linear ids. SSA ids are cheaper to work with and easier to reason
+/// about.
 fn ssa_greedy_optimize(
-    inputs: &[ArrayIndexType],
+    inputs: &[&ArrayIndexType],
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
-    choose_fn: Option<
-        fn(&mut BinaryHeap<GreedyContractionType>, &BTreeMap<ArrayIndexType, usize>) -> Option<GreedyContractionType>,
-    >,
-    cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
+    choose_fn: Option<GreedyChooseFn>,
+    cost_fn: Option<paths::CostFn>,
 ) -> PathType {
+    if inputs.is_empty() {
+        return vec![];
+    }
+
     if inputs.len() == 1 {
+        // Perform a single contraction to match output shape.
         return vec![vec![0]];
     }
 
+    // set the function that chooses which contraction to take
     let push_all = choose_fn.is_none();
     let choose_fn = choose_fn.unwrap_or(simple_chooser);
 
-    let fs_inputs: Vec<ArrayIndexType> = inputs.to_vec();
-    let common_dims: ArrayIndexType =
-        fs_inputs.iter().skip(1).fold(fs_inputs[0].clone(), |acc, s| acc.intersection(s).cloned().collect());
-    let output: ArrayIndexType = output.union(&common_dims).cloned().collect();
+    // set the function that assigns a heuristic cost to a possible contraction
+    let cost_fn = cost_fn.unwrap_or(paths::util::memory_removed(false));
 
-    let mut remaining = BTreeMap::new();
-    let mut ssa_ids = fs_inputs.len();
+    // A dim that is common to all tensors might as well be an output dim, since it cannot be contracted
+    // until the final step. This avoids an expensive all-pairs comparison to search for possible
+    // contractions at each step, leading to speedup in many practical problems where all tensors share
+    // a common batch dimension.
+    let common_dims = inputs.iter().skip(1).fold(inputs[0].clone(), |acc, s| &acc & s);
+    let output = output | &common_dims;
+
+    // Deduplicate shapes by eagerly computing Hadamard products.
+    let mut remaining = BTreeMap::new(); // key -> ssa_id
+    let mut ssa_ids = inputs.len();
     let mut ssa_path = Vec::new();
 
-    for (ssa_id, key) in fs_inputs.into_iter().enumerate() {
+    for (ssa_id, &key) in inputs.iter().enumerate() {
+        let key = key.clone();
         if let Some(&existing_id) = remaining.get(&key) {
             ssa_path.push(vec![existing_id, ssa_id]);
             remaining.insert(key, ssa_ids);
@@ -162,22 +204,23 @@ fn ssa_greedy_optimize(
         }
     }
 
+    // Keep track of possible contraction dims.
     let mut dim_to_keys: BTreeMap<char, BTreeSet<ArrayIndexType>> = BTreeMap::new();
     for key in remaining.keys() {
-        key.difference(&output).for_each(|&dim| {
+        for dim in key - &output {
             dim_to_keys.entry(dim).or_default().insert(key.clone());
-        });
+        }
     }
 
-    let mut dim_ref_counts: BTreeMap<usize, BTreeSet<char>> =
-        BTreeMap::from([(2, BTreeSet::new()), (3, BTreeSet::new())]);
-    for (dim, keys) in &dim_to_keys {
-        let count = keys.len();
-        if count >= 2 {
-            dim_ref_counts.get_mut(&2).unwrap().insert(*dim);
+    // Keep track of the number of tensors using each dim; when the dim is no longer used it can be
+    // contracted. Since we specialize to binary ops, we only care about ref counts of >=2 or >=3.
+    let mut dim_ref_counts = BTreeMap::from([(2, BTreeSet::new()), (3, BTreeSet::new())]);
+    for (&dim, keys) in &dim_to_keys {
+        if keys.len() >= 2 {
+            dim_ref_counts.get_mut(&2).unwrap().insert(dim);
         }
-        if count >= 3 {
-            dim_ref_counts.get_mut(&3).unwrap().insert(*dim);
+        if keys.len() >= 3 {
+            dim_ref_counts.get_mut(&3).unwrap().insert(dim);
         }
     }
     output.iter().for_each(|dim| {
@@ -185,17 +228,18 @@ fn ssa_greedy_optimize(
         dim_ref_counts.get_mut(&3).unwrap().remove(dim);
     });
 
+    // Compute separable part of the objective function for contractions.
     let mut footprints: BTreeMap<ArrayIndexType, SizeType> =
         remaining.keys().map(|k| (k.clone(), helpers::compute_size_by_dict(k.iter(), size_dict))).collect();
 
+    // Find initial candidate contractions.
     let mut queue = BinaryHeap::new();
     for dim_keys in dim_to_keys.values() {
-        let mut dim_keys_list: Vec<ArrayIndexType> = dim_keys.iter().cloned().collect();
+        let mut dim_keys_list = dim_keys.iter().cloned().collect_vec();
         dim_keys_list.sort_by_key(|k| remaining[k]);
         for i in 0..dim_keys_list.len().saturating_sub(1) {
             let k1 = &dim_keys_list[i];
             let k2s_guess = &dim_keys_list[i + 1..];
-            println!("push_candidate k1 {k1:?} k2s_guess {k2s_guess:?}");
             push_candidate(
                 &output,
                 size_dict,
@@ -210,58 +254,48 @@ fn ssa_greedy_optimize(
             );
         }
     }
-    println!("queue: {queue:?}");
 
+    // Greedily contract pairs of tensors.
     while !queue.is_empty() {
         let Some(con) = choose_fn(&mut queue, &remaining) else {
-            continue;
+            continue; // allow choose_fn to flag all candidates obsolete
         };
-        let GreedyContractionType { cost, k1, k2, k12 } = con;
-        println!("Chose k1 {k1:?} k2 {k2:?} -> k12 {k12:?}, cost {cost:?}");
+        let GreedyContractionType { k1, k2, k12, .. } = con;
 
-        let ssa_id2 = remaining.remove(&k2).unwrap();
         let ssa_id1 = remaining.remove(&k1).unwrap();
+        let ssa_id2 = remaining.remove(&k2).unwrap();
 
-        k1.difference(&output).for_each(|&dim| {
-            if let Some(keys) = dim_to_keys.get_mut(&dim) {
-                keys.remove(&k1);
-            }
-        });
-        k2.difference(&output).for_each(|&dim| {
-            if let Some(keys) = dim_to_keys.get_mut(&dim) {
-                keys.remove(&k2);
-            }
-        });
+        for dim in &k1 - &output {
+            dim_to_keys.get_mut(&dim).unwrap().remove(&k1);
+        }
+        for dim in &k2 - &output {
+            dim_to_keys.get_mut(&dim).unwrap().remove(&k2);
+        }
 
         ssa_path.push(vec![ssa_id1, ssa_id2]);
-        println!("Pushed ssa path: {:?}", vec![ssa_id1, ssa_id2]);
 
         if remaining.contains_key(&k12) {
-            let existing_id = remaining[&k12];
-            ssa_path.push(vec![existing_id, ssa_ids]);
+            ssa_path.push(vec![remaining[&k12], ssa_ids]);
             ssa_ids += 1;
         } else {
-            k12.difference(&output).for_each(|&dim| {
-                dim_to_keys.entry(dim).or_default().insert(k12.clone());
-            });
+            for dim in &k12 - &output {
+                dim_to_keys.get_mut(&dim).unwrap().insert(k12.clone());
+            }
         }
         remaining.insert(k12.clone(), ssa_ids);
         ssa_ids += 1;
 
-        let updated_dims: ArrayIndexType = &(&k1 | &k2) - &output;
+        let updated_dims = &(&k1 | &k2) - &output;
         update_ref_counts(&dim_to_keys, &mut dim_ref_counts, &updated_dims, &output);
 
         footprints.insert(k12.clone(), helpers::compute_size_by_dict(k12.iter(), size_dict));
 
+        // Find new candidate contractions.
         let k1 = k12;
-        let k2s: BTreeSet<ArrayIndexType> = k1
-            .difference(&output)
-            .flat_map(|dim| dim_to_keys.get(dim).cloned().unwrap_or_default())
-            .filter(|k| k != &k1)
-            .collect();
+        let k2s: BTreeSet<ArrayIndexType> =
+            (&k1 - &output).into_iter().flat_map(|dim| dim_to_keys[&dim].clone()).filter(|k| k != &k1).collect();
 
         if !k2s.is_empty() {
-            println!("push_candidate k1 {k1:?} k2s {k2s:?}");
             push_candidate(
                 &output,
                 size_dict,
@@ -277,6 +311,7 @@ fn ssa_greedy_optimize(
         }
     }
 
+    // Greedily compute pairwise outer products.
     #[derive(Clone, Debug, PartialEq, PartialOrd)]
     struct FinalEntry {
         size: SizeType,
@@ -291,6 +326,7 @@ fn ssa_greedy_optimize(
         }
     }
 
+    // Greedily compute pairwise outer products.
     let mut final_queue: BinaryHeap<Reverse<FinalEntry>> = remaining
         .into_iter()
         .map(|(key, ssa_id)| {
@@ -322,54 +358,48 @@ fn ssa_greedy_optimize(
     ssa_path
 }
 
+/// Finds the path by a three stage greedy algorithm.
+///
+/// 1. Eagerly compute Hadamard products.
+/// 2. Greedily compute contractions to maximize `removed_size`.
+/// 3. Greedily compute outer products.
+///
+/// This algorithm scales quadratically with respect to the maximum number of elements sharing a
+/// common dim.
+///
+/// # Parameters
+///
+/// - **inputs** - List of sets that represent the lhs side of the einsum subscript
+/// - **output** - Set that represents the rhs side of the overall einsum subscript
+/// - **size_dict** - Dictionary of index sizes
+/// - **memory_limit** - The maximum number of elements in a temporary array
+/// - **choose_fn** - A function that chooses which contraction to perform from the queue
+/// - **cost_fn** - A function that assigns a potential contraction a cost.
+///
+/// # Returns
+///
+/// - **path** - The contraction order (a list of tuples of ints).
 pub fn greedy(
     inputs: &[&ArrayIndexType],
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
-    choose_fn: Option<
-        fn(&mut BinaryHeap<GreedyContractionType>, &BTreeMap<ArrayIndexType, usize>) -> Option<GreedyContractionType>,
-    >,
-    cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
+    choose_fn: Option<GreedyChooseFn>,
+    cost_fn: Option<paths::CostFn>,
 ) -> PathType {
     if memory_limit.is_some() {
         let mut branch_optimizer = paths::branch_bound::BranchBound::from("branch-1");
         return branch_optimizer.optimize_path(inputs, output, size_dict, memory_limit);
     }
 
-    let inputs_owned: Vec<ArrayIndexType> = inputs.iter().cloned().cloned().collect();
-    let ssa_path = ssa_greedy_optimize(&inputs_owned, output, size_dict, choose_fn, cost_fn);
+    let ssa_path = ssa_greedy_optimize(inputs, output, size_dict, choose_fn, cost_fn);
     paths::util::ssa_to_linear(&ssa_path)
 }
 
-pub fn memory_removed(
-    size12: SizeType,
-    size1: SizeType,
-    size2: SizeType,
-    _k12: &ArrayIndexType,
-    _k1: &ArrayIndexType,
-    _k2: &ArrayIndexType,
-) -> SizeType {
-    size12 - size1 - size2
-}
-
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Greedy {
-    cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
-}
-
-impl Default for Greedy {
-    fn default() -> Self {
-        Self { cost_fn: memory_removed }
-    }
-}
-
-impl Greedy {
-    pub fn new(
-        cost_fn: fn(SizeType, SizeType, SizeType, &ArrayIndexType, &ArrayIndexType, &ArrayIndexType) -> SizeType,
-    ) -> Self {
-        Self { cost_fn }
-    }
+    cost_fn: Option<paths::CostFn>,
+    choose_fn: Option<GreedyChooseFn>,
 }
 
 impl PathOptimizer for Greedy {
@@ -380,6 +410,6 @@ impl PathOptimizer for Greedy {
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
     ) -> PathType {
-        greedy(inputs, output, size_dict, memory_limit, None, self.cost_fn)
+        greedy(inputs, output, size_dict, memory_limit, self.choose_fn, self.cost_fn)
     }
 }

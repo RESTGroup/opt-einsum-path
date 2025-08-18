@@ -1,6 +1,4 @@
 use crate::*;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinimizeStrategy {
@@ -16,17 +14,6 @@ pub fn get_better_fn(key: MinimizeStrategy) -> fn(SizeType, SizeType, SizeType, 
         },
         MinimizeStrategy::SizeFirst => {
             |flops, size, best_flops, best_size| size < best_size || (size == best_size && flops < best_flops)
-        },
-    }
-}
-
-/// Returns the appropriate cost function based on the enum variant
-pub fn memory_removed(jitter: bool) -> fn(SizeType, SizeType, SizeType, usize, usize, usize) -> SizeType {
-    match jitter {
-        false => |size12, size1, size2, _k12, _k1, _k2| size12 - size1 - size2,
-        true => |size12, size1, size2, _k12, _k1, _k2| {
-            let mut rng = rand::rng();
-            SizeType::from_f64(rng.random_range(0.99..1.01) * (size12 - size1 - size2).to_f64().unwrap()).unwrap()
         },
     }
 }
@@ -74,7 +61,7 @@ pub struct BranchBound {
     pub nbranch: Option<usize>,
     pub cutoff_flops_factor: SizeType,
     pub better_fn: fn(SizeType, SizeType, SizeType, SizeType) -> bool,
-    pub cost_fn: fn(SizeType, SizeType, SizeType, usize, usize, usize) -> SizeType,
+    pub cost_fn: paths::CostFn,
     pub best: BranchBoundBest,
     pub best_progress: BTreeMap<usize, SizeType>,
     // caches
@@ -93,7 +80,7 @@ impl Default for BranchBound {
             nbranch: None,
             cutoff_flops_factor: SizeType::from_f64(4.0).unwrap(),
             better_fn: get_better_fn(MinimizeStrategy::FlopsFirst),
-            cost_fn: memory_removed(false),
+            cost_fn: paths::util::memory_removed(false),
             best: BranchBoundBest::default(),
             best_progress: BTreeMap::new(),
             // caches

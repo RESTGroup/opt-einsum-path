@@ -6,6 +6,8 @@ pub mod no_optimize;
 pub mod optimal;
 pub mod util;
 
+pub(crate) use paths::util::*;
+
 use std::str::FromStr;
 
 use crate::*;

@@ -360,3 +360,26 @@ fn test_greedy_issue_248() {
     println!("{path:?}");
     println!("{path_info}");
 }
+
+#[test]
+fn test_greedy_non_optimal() {
+    let m = vec![35, 37, 59];
+    let a = vec![35, 51, 59];
+    let b = vec![37, 51, 51, 59];
+    let c = vec![59, 27];
+    let shapes = vec![m, a, b, c];
+
+    let subscripts = "xyf,xtf,ytpf,fr->tpr";
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("greedy"), None).unwrap();
+    println!("Time: {:?}", time.elapsed());
+    println!("{path:?}");
+    println!("{path_info}");
+
+    let subscripts = "xyf,xtf,ytpf,fr->tpr";
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("optimal"), None).unwrap();
+    println!("Time: {:?}", time.elapsed());
+    println!("{path:?}");
+    println!("{path_info}");
+}
