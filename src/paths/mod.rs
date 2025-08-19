@@ -1,6 +1,7 @@
 //! Contains the path technology behind opt_einsum in addition to several path helpers.
 
 pub mod branch_bound;
+pub mod dp;
 pub mod greedy;
 pub mod no_optimize;
 pub mod optimal;
@@ -29,6 +30,7 @@ pub enum OptimizeKind {
     NoOptimize(paths::no_optimize::NoOptimize),
     BranchBound(paths::branch_bound::BranchBound),
     Greedy(paths::greedy::Greedy),
+    DynamicProgramming(paths::dp::DynamicProgramming),
 }
 
 impl paths::PathOptimizer for OptimizeKind {
@@ -45,6 +47,7 @@ impl paths::PathOptimizer for OptimizeKind {
             NoOptimize(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),
             BranchBound(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),
             Greedy(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),
+            DynamicProgramming(optimizer) => optimizer.optimize_path(inputs, output, size_dict, memory_limit),
         }
     }
 }
@@ -60,6 +63,7 @@ impl FromStr for OptimizeKind {
             "branch-2" => BranchBound("branch-2".into()),
             "branch-1" => BranchBound("branch-1".into()),
             "greedy" => Greedy(Default::default()),
+            "dp" | "dynamic-programming" => DynamicProgramming(Default::default()),
             _ => Err(format!("Unknown optimization kind: {s}"))?,
         };
         Ok(optimizer)

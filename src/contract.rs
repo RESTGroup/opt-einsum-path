@@ -98,7 +98,7 @@ pub fn contract_path<Opt>(
     operands: &[TensorShapeType],
     use_blas: bool,
     mut optimize: Opt,
-    memory_limit: impl Into<MemoryLimitType>,
+    memory_limit: impl Into<SizeLimitType>,
 ) -> Result<(PathType, PathInfo), String>
 where
     Opt: PathOptimizer,
@@ -151,9 +151,9 @@ where
         .collect();
     let size_list_max = size_list.iter().cloned().reduce(SizeType::max).unwrap_or(SizeType::zero());
     let memory_arg = match memory_limit.into() {
-        MemoryLimitType::None => None,
-        MemoryLimitType::MaxInput => Some(size_list_max),
-        MemoryLimitType::Size(size) => Some(size),
+        SizeLimitType::None => None,
+        SizeLimitType::MaxInput => Some(size_list_max),
+        SizeLimitType::Size(size) => Some(size),
     };
 
     let num_ops = input_list.len();
@@ -346,17 +346,23 @@ fn test_greedy_issue_248() {
     let eta1 = vec![naux, nx];
     let theta = vec![naux, no];
     let subscripts = "iP,sP,PQ,jQ,tQ,ti,sj->";
-    let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(
-        subscripts,
-        &[eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()],
-        true,
-        OptimizeKind::from("greedy"),
-        None,
-    )
-    .unwrap();
-    println!("Time: {:?}", time.elapsed());
+    let shapes = vec![eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()];
 
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("optimal"), None).unwrap();
+    println!("Time (optimal): {:?}", time.elapsed());
+    println!("{path:?}");
+    println!("{path_info}");
+
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("greedy"), None).unwrap();
+    println!("Time (greedy): {:?}", time.elapsed());
+    println!("{path:?}");
+    println!("{path_info}");
+
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("dp"), None).unwrap();
+    println!("Time (dp): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
 }

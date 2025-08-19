@@ -16,7 +16,8 @@ pub struct ContractionType {
     pub do_blas: Option<&'static str>,
 }
 
-pub enum MemoryLimitType {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SizeLimitType {
     None,
     MaxInput,
     Size(SizeType),
@@ -24,26 +25,26 @@ pub enum MemoryLimitType {
 
 /* #region implementations */
 
-impl From<SizeType> for MemoryLimitType {
+impl From<SizeType> for SizeLimitType {
     fn from(size: SizeType) -> Self {
-        MemoryLimitType::Size(size)
+        SizeLimitType::Size(size)
     }
 }
 
-impl From<Option<SizeType>> for MemoryLimitType {
+impl From<Option<SizeType>> for SizeLimitType {
     fn from(size: Option<SizeType>) -> Self {
         match size {
-            Some(s) => MemoryLimitType::Size(s),
-            None => MemoryLimitType::None,
+            Some(s) => SizeLimitType::Size(s),
+            None => SizeLimitType::None,
         }
     }
 }
 
-impl From<&'static str> for MemoryLimitType {
+impl From<&'static str> for SizeLimitType {
     fn from(size: &'static str) -> Self {
         match size.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
-            "max-input" => MemoryLimitType::MaxInput,
-            "" | "none" | "no-limit" => MemoryLimitType::None,
+            "max-input" => SizeLimitType::MaxInput,
+            "" | "none" | "no-limit" => SizeLimitType::None,
             _ => panic!("Invalid MemoryLimitType string: {size}"),
         }
     }

@@ -217,15 +217,56 @@ where
     overall_size * SizeType::from_usize(op_factor).unwrap()
 }
 
+/// Converts a set-like structure to an `ArrayIndexType`.
+pub trait Setify {
+    type Output;
+    fn setify(self) -> Self::Output;
+}
+
+impl Setify for &str {
+    type Output = ArrayIndexType;
+    fn setify(self) -> Self::Output {
+        self.chars().collect()
+    }
+}
+
+impl<T, const N: usize> Setify for [T; N]
+where
+    T: Clone + Ord,
+{
+    type Output = BTreeSet<T>;
+    fn setify(self) -> Self::Output {
+        self.iter().cloned().collect()
+    }
+}
+
+impl<T> Setify for Vec<T>
+where
+    T: Clone + Ord,
+{
+    type Output = BTreeSet<T>;
+    fn setify(self) -> Self::Output {
+        self.into_iter().collect()
+    }
+}
+
+/// Converts some object to BTreeSet.
+pub fn setify<T>(obj: T) -> T::Output
+where
+    T: Setify,
+{
+    obj.setify()
+}
+
 #[test]
 fn playground() {
     let positions = [0, 1];
-    let input_sets = ["ab".chars().collect(), "bc".chars().collect()];
+    let input_sets = [setify("ab"), setify("bc")];
     let input_sets = input_sets.iter().collect::<Vec<_>>();
-    let output_set = "ac".chars().collect();
+    let output_set = setify("ac");
     let (new_result, remaining, idx_removed, idx_contract) = find_contraction(&positions, &input_sets, &output_set);
-    assert_eq!(new_result, "ac".chars().collect());
-    assert_eq!(remaining, vec!["ac".chars().collect()]);
-    assert_eq!(idx_removed, "b".chars().collect());
-    assert_eq!(idx_contract, "abc".chars().collect());
+    assert_eq!(new_result, setify("ac"));
+    assert_eq!(remaining, vec![setify("ac")]);
+    assert_eq!(idx_removed, setify("b"));
+    assert_eq!(idx_contract, setify("abc"));
 }

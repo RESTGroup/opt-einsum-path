@@ -1,0 +1,506 @@
+// src/paths/dp.rs
+use crate::*;
+use std::collections::VecDeque;
+
+// Define our tree type
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractionTree {
+    Leaf(usize),
+    Node(Vec<ContractionTree>),
+}
+
+impl From<usize> for ContractionTree {
+    fn from(value: usize) -> Self {
+        ContractionTree::Leaf(value)
+    }
+}
+
+impl From<Vec<ContractionTree>> for ContractionTree {
+    fn from(value: Vec<ContractionTree>) -> Self {
+        ContractionTree::Node(value)
+    }
+}
+
+impl From<Vec<usize>> for ContractionTree {
+    fn from(value: Vec<usize>) -> Self {
+        ContractionTree::Node(value.into_iter().map(ContractionTree::Leaf).collect())
+    }
+}
+
+/// Converts a contraction tree to a contraction path.
+///
+/// A contraction tree can either be a leaf node containing an integer (representingno contraction)
+/// or a node containing a sequence of subtrees to be contracted.Contractions are commutative
+/// (order-independent) and solutions are not unique.
+///
+/// # Parameters
+///
+/// * `tree` - The contraction tree to convert, represented as a `ContractionTree` enum where leaves
+///   are integers and nodes contain sequences of subtrees.
+///
+/// # Returns
+///
+/// A `PathType` (Vec<Vec<usize>>) representing the contraction path, where each inner Vec<usize>
+/// represents a single contraction step with the indices of tensors to contract.
+///
+/// The conversion process works by:
+/// 1. Processing leaf nodes (integers) first to determine their positions
+/// 2. Building the contraction sequence by tracking elementary tensors and remaining contractions
+/// 3. Maintaining proper index accounting throughout the conversion
+///
+/// Note: This implementation matches the behavior of Python's `_tree_to_sequence` function
+/// from opt_einsum, producing equivalent output for equivalent input trees.
+pub fn tree_to_sequence(tree: &ContractionTree) -> PathType {
+    // Handle leaf case (equivalent to Python's int case)
+    if let ContractionTree::Leaf(_) = tree {
+        return Vec::new();
+    }
+
+    let mut c: VecDeque<&ContractionTree> = VecDeque::new(); // list of remaining contractions
+    c.push_back(tree);
+
+    let mut t: Vec<usize> = Vec::new(); // list of elementary tensors
+    let mut s: VecDeque<Vec<usize>> = VecDeque::new(); // resulting contraction sequence
+
+    while !c.is_empty() {
+        let j = c.pop_back().unwrap();
+        s.push_front(Vec::new());
+
+        // First process the integer leaves
+        if let ContractionTree::Node(children) = j {
+            // Collect integer leaves first
+            let mut int_children: Vec<usize> = children
+                .iter()
+                .filter_map(|child| match child {
+                    ContractionTree::Leaf(i) => Some(*i),
+                    _ => None,
+                })
+                .collect();
+
+            // Sort them as in Python
+            int_children.sort_unstable();
+
+            for i in int_children {
+                // Calculate the position as in Python: sum(1 for q in t if q < i)
+                let pos = t.iter().filter(|&&q| q < i).count();
+                s[0].push(pos);
+                t.insert(pos, i);
+            }
+
+            // Then process the non-integer children (other nodes)
+            for i_tup in children.iter().filter(|child| matches!(child, ContractionTree::Node(_))) {
+                let pos = t.len() + c.len();
+                s[0].push(pos);
+                c.push_back(i_tup);
+            }
+        }
+    }
+
+    s.into_iter().collect()
+}
+
+/// Finds disconnected subgraphs in a list of input tensor dimensions.
+///
+/// Input tensors are considered connected if they share summation indices (indices not
+/// present in the output). Disconnected subgraphs can be contracted independently
+/// before forming outer products, which is useful for optimization.
+///
+/// # Parameters
+///
+/// * `inputs` - Slice of sets representing input tensor dimensions (lhs of einsum)
+/// * `output` - Set representing output tensor dimensions (rhs of einsum)
+///
+/// # Returns
+///
+/// Vector of sets where each set contains indices of connected input tensors.
+///
+/// # Note
+///
+/// - Summation indices are determined as `(union of all inputs) \ output`
+/// - The order of returned subgraphs is implementation-defined
+/// - Within each subgraph, the order of tensor indices is sorted
+pub fn find_disconnected_subgraphs(inputs: &[ArrayIndexType], output: &ArrayIndexType) -> Vec<BTreeSet<usize>> {
+    let mut subgraphs = Vec::new();
+    let mut unused_inputs: BTreeSet<usize> = (0..inputs.len()).collect();
+
+    // Calculate all summation indices (union of all inputs minus output)
+    let input_indices: ArrayIndexType = inputs.iter().flat_map(|set| set.iter()).cloned().collect();
+    let i_sum = &input_indices - output;
+
+    while !unused_inputs.is_empty() {
+        let mut g = BTreeSet::new();
+        let mut queue = VecDeque::new();
+
+        // Start with any remaining input
+        queue.push_back(*unused_inputs.iter().next().unwrap());
+        unused_inputs.remove(&queue[0]);
+
+        while !queue.is_empty() {
+            let j = queue.pop_front().unwrap();
+            g.insert(j);
+
+            // Get summation indices for current input
+            let i_tmp: ArrayIndexType = &i_sum & &inputs[j];
+
+            // Find connected inputs
+            let neighbors = unused_inputs.iter().filter(|&&k| !inputs[k].is_disjoint(&i_tmp)).cloned().collect_vec();
+
+            for neighbor in neighbors {
+                queue.push_back(neighbor);
+                unused_inputs.remove(&neighbor);
+            }
+        }
+        subgraphs.push(g);
+    }
+    subgraphs
+}
+
+/// Select elements of `seq` which are marked by the bitmap `s`.
+///
+/// # Parameters
+///
+/// * `s` - Bitmap where each bit represents whether to select the corresponding element
+/// * `seq` - Sequence of items to select from
+///
+/// # Returns
+///
+/// An iterator yielding selected elements from `seq` where the corresponding bit in `s` is set.
+pub fn bitmap_select<T>(s: usize, seq: &[T]) -> impl Iterator<Item = &T> {
+    seq.iter().enumerate().filter(move |(i, _)| (s >> i) & 1 == 1).map(|(_, x)| x)
+}
+
+// Calculates the effective outer indices of the intermediate tensor
+/// corresponding to the subgraph `s`.
+///
+/// # Parameters
+///
+/// * `g` - Bitmap representing all tensors in the current graph
+/// * `all_tensors` - Bitmap representing all possible tensors
+/// * `s` - Bitmap representing the subgraph to calculate legs for
+/// * `inputs` - Slice of input tensor dimension sets
+/// * `i1_cut_i2_wo_output` - Precomputed intersection of indices (i1 ∩ i2) \ output
+/// * `i1_union_i2` - Precomputed union of indices (i1 ∪ i2)
+///
+/// # Returns
+///
+/// The effective outer indices of the intermediate tensor
+pub fn dp_calc_legs(
+    g: usize,
+    all_tensors: usize,
+    s: usize,
+    inputs: &[&ArrayIndexType],
+    i1_cut_i2_wo_output: &ArrayIndexType,
+    i1_union_i2: &ArrayIndexType,
+) -> ArrayIndexType {
+    // set of remaining tensors (= g & (!s))
+    let r = g & (all_tensors ^ s);
+
+    // indices of remaining indices:
+    let i_r = if r != 0 {
+        bitmap_select(r, inputs).fold(ArrayIndexType::new(), |acc, s| &acc | s)
+    } else {
+        ArrayIndexType::new()
+    };
+
+    // contraction indices:
+    let i_contract = i1_cut_i2_wo_output - &i_r;
+    i1_union_i2 - &i_contract
+}
+
+#[derive(Debug, Clone)]
+pub struct DpTerm {
+    pub indices: ArrayIndexType,
+    pub cost: SizeType,
+    pub contract: ContractionTree,
+}
+
+pub struct DpCompareArgs<'a> {
+    // inputs
+    pub inputs: &'a [&'a ArrayIndexType],
+    pub size_dict: &'a SizeDictType,
+    pub all_tensors: usize,
+    pub memory_limit: Option<SizeType>,
+    // inputs that will change during the search
+    pub cost_cap: SizeType,
+    // temporaries
+    pub xn: &'a mut BTreeMap<usize, DpTerm>,
+    pub g: usize,
+}
+
+impl<'a> DpCompareArgs<'a> {
+    /// Performs the inner comparison of whether the two subgraphs (the bitmaps `s1` and `s2`)
+    /// should be merged and added to the dynamic programming search. Will skip for a number of
+    /// reasons:
+    /// 1. If the number of operations to form `s = s1 | s2` including previous contractions is
+    ///    above the cost-cap.
+    /// 2. If we've already found a better way of making `s`.
+    /// 3. If the intermediate tensor corresponding to `s` is going to break the memory limit.
+    pub fn compare_flops(&mut self, s1: usize, s2: usize, term1: &DpTerm, term2: &DpTerm, output: &ArrayIndexType) {
+        let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
+        let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
+
+        let i1_cut_i2_wo_output = &(i1 & i2) - output;
+        let i1_union_i2 = i1 | i2;
+
+        let cost = cost1 + cost2 + helpers::compute_size_by_dict(i1_union_i2.iter(), self.size_dict);
+
+        if cost <= self.cost_cap {
+            let s = s1 | s2;
+
+            // Check if this is a better path to reach 's'
+            if self.xn.get(&s).is_none_or(|term| cost < term.cost) {
+                let indices =
+                    dp_calc_legs(self.g, self.all_tensors, s, self.inputs, &i1_cut_i2_wo_output, &i1_union_i2);
+                let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
+                if self.memory_limit.is_none_or(|limit| mem <= limit) {
+                    let contract = vec![contract1.clone(), contract2.clone()].into();
+                    self.xn.insert(s, DpTerm { indices, cost, contract });
+                }
+            }
+        }
+    }
+}
+
+/// Makes a simple left-to-right binary tree out of a sequence of terms.
+///
+/// # Arguments
+/// * `seq` - Sequence of terms to nest
+///
+/// # Returns
+/// A `ContractionTree` representing the left-nested binary tree
+pub fn simple_tree_tuple(seq: &[ContractionTree]) -> ContractionTree {
+    seq.iter().cloned().reduce(|left, right| ContractionTree::Node(vec![left, right])).unwrap()
+}
+use std::collections::{BTreeMap, BTreeSet};
+
+/// Parses inputs for single term index operations (indices appearing on one tensor).
+///
+/// Returns:
+/// - Parsed inputs with single indices removed
+/// - Inputs that were reduced to scalars
+/// - Contractions needed for the reductions
+pub fn dp_parse_out_single_term_ops(
+    inputs: &[&ArrayIndexType],
+    all_inds: &[char],
+    ind_counts: &SizeDictType,
+) -> (Vec<ArrayIndexType>, Vec<ContractionTree>, Vec<ContractionTree>) {
+    let i_single: BTreeSet<char> = all_inds.iter().filter(|&c| ind_counts.get(c) == Some(&1)).cloned().collect();
+
+    let mut inputs_parsed = Vec::new();
+    let mut inputs_done = Vec::new();
+    let mut inputs_contractions = Vec::new();
+
+    for (j, input) in inputs.iter().enumerate() {
+        let i_reduced: ArrayIndexType = *input - &i_single;
+        if i_reduced.is_empty() && !input.is_empty() {
+            // Input reduced to scalar - remove
+            inputs_done.push(vec![j].into());
+        } else {
+            // Add single contraction if indices were reduced
+            inputs_contractions.push(if i_reduced.len() != input.len() { vec![j].into() } else { j.into() });
+            inputs_parsed.push(i_reduced);
+        }
+    }
+
+    (inputs_parsed, inputs_done, inputs_contractions)
+}
+
+#[derive(Debug, Clone)]
+pub struct DynamicProgramming {
+    pub minimize: &'static str,
+    pub search_outer: bool,
+    pub cost_cap: SizeLimitType,
+}
+
+impl Default for DynamicProgramming {
+    fn default() -> Self {
+        Self { minimize: "flops", search_outer: false, cost_cap: None.into() }
+    }
+}
+
+impl DynamicProgramming {
+    pub fn find_optimal_path(
+        &self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> PathType {
+        // Initialize cost function parameters
+        let naive_scale = 1.0;
+
+        let check_outer =
+            if self.search_outer { |_: &BTreeSet<char>| true } else { |x: &BTreeSet<char>| !x.is_empty() };
+
+        // Count index occurrences
+        let ind_counts: BTreeMap<char, usize> =
+            inputs.iter().flat_map(|inds| inds.iter()).chain(output.iter()).fold(BTreeMap::new(), |mut counts, &c| {
+                *counts.entry(c).or_default() += 1;
+                counts
+            });
+
+        let all_inds: Vec<char> = ind_counts.keys().copied().collect();
+
+        // Parse single-term operations
+        let (inputs, inputs_done, inputs_contractions) = dp_parse_out_single_term_ops(inputs, &all_inds, &ind_counts);
+        let inputs_ref = inputs.iter().collect_vec();
+
+        if inputs.is_empty() {
+            return tree_to_sequence(&simple_tree_tuple(&inputs_done));
+        }
+
+        // Initialize subgraph tracking
+        let mut subgraph_contractions = inputs_done;
+        let mut subgraph_sizes: Vec<SizeType> = vec![1.0; subgraph_contractions.len()];
+
+        // Find disconnected subgraphs
+        let subgraphs = if self.search_outer {
+            vec![(0..inputs.len()).collect_vec()]
+        } else {
+            find_disconnected_subgraphs(&inputs, output).into_iter().map(|s| s.into_iter().collect()).collect()
+        };
+
+        let all_tensors = (1 << inputs.len()) - 1;
+
+        for g in subgraphs {
+            let bitmap_g = g.iter().fold(0, |acc, &j| acc | (1 << j));
+
+            // Initialize DP table
+            let mut x: Vec<BTreeMap<usize, DpTerm>> = vec![BTreeMap::new(); g.len() + 1];
+            x[1] = g
+                .iter()
+                .map(|&j| {
+                    (1 << j, DpTerm { indices: inputs[j].clone(), cost: 0.0, contract: inputs_contractions[j].clone() })
+                })
+                .collect();
+
+            // Initialize cost cap
+            let subgraph_inds = bitmap_select(bitmap_g, &inputs).flat_map(|inds| inds.iter().copied()).collect();
+
+            let mut cost_cap = match self.cost_cap {
+                SizeLimitType::Size(cap) => cap,
+                SizeLimitType::None => SizeType::MAX,
+                SizeLimitType::MaxInput => helpers::compute_size_by_dict((&subgraph_inds & output).iter(), size_dict),
+            };
+
+            let cost_increment = if subgraph_inds.is_empty() {
+                2.0
+            } else {
+                subgraph_inds.iter().map(|c| *size_dict.get(c).unwrap_or(&1) as SizeType).fold(2.0, SizeType::max)
+            };
+            while x.last().unwrap().is_empty() {
+                for n in 2..=g.len() {
+                    for m in 1..=(n / 2) {
+                        for (s1, term1) in x[m].clone() {
+                            for (s2, term2) in x[n - m].clone() {
+                                if (s1 & s2 == 0) && (m != n - m || s1 < s2) {
+                                    let i1 = &term1.indices;
+                                    let i2 = &term2.indices;
+                                    let i1_cut_i2_wo_output = &(i1 & i2) - output;
+                                    if check_outer(&i1_cut_i2_wo_output) {
+                                        let mut dp_args = DpCompareArgs {
+                                            inputs: &inputs_ref,
+                                            size_dict,
+                                            all_tensors,
+                                            memory_limit,
+                                            cost_cap,
+                                            xn: &mut x[n],
+                                            g: bitmap_g,
+                                        };
+                                        dp_args.compare_flops(s1, s2, &term1, &term2, output);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if cost_cap > naive_scale * inputs.len() as SizeType * size_dict.values().product::<usize>() as SizeType
+                    && x.last().unwrap().is_empty()
+                {
+                    panic!("No contraction found for given memory_limit");
+                }
+
+                cost_cap *= cost_increment;
+            }
+
+            let (_, term) = x.last().unwrap().iter().next().unwrap();
+            subgraph_contractions.push(term.contract.clone());
+            subgraph_sizes.push(helpers::compute_size_by_dict(term.indices.iter(), size_dict));
+        }
+
+        // Sort subgraphs by size
+        let sorted_indices =
+            (0..subgraph_sizes.len()).sorted_by(|&a, &b| subgraph_sizes[a].partial_cmp(&subgraph_sizes[b]).unwrap());
+        let sorted_contractions = sorted_indices.map(|i| subgraph_contractions[i].clone()).collect_vec();
+
+        tree_to_sequence(&simple_tree_tuple(&sorted_contractions))
+    }
+}
+
+impl PathOptimizer for DynamicProgramming {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> PathType {
+        self.find_optimal_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+#[test]
+fn test_tree_to_sequence() {
+    let tree: ContractionTree = ContractionTree::from(vec![
+        ContractionTree::from(vec![1, 2]),
+        vec![ContractionTree::from(0), ContractionTree::from(vec![4, 5, 3])].into(),
+    ]);
+
+    let path = tree_to_sequence(&tree);
+    println!("{path:?}");
+    assert_eq!(path, vec![vec![1, 2], vec![1, 2, 3], vec![0, 2], vec![0, 1]]);
+}
+
+#[test]
+fn test_find_disconnected_subgraphs() {
+    use crate::helpers::setify;
+    // First test case
+    let inputs1 = vec![setify("ab"), setify("c"), setify("ad")];
+    let output1 = setify("bd");
+    let result1 = find_disconnected_subgraphs(&inputs1, &output1);
+    assert_eq!(result1, vec![setify([0, 2]), setify([1])]);
+
+    // Second test case
+    let inputs2 = vec![setify("ab"), setify("c"), setify("ad")];
+    let output2 = setify("abd");
+    let result2 = find_disconnected_subgraphs(&inputs2, &output2);
+    assert_eq!(result2, vec![setify([0]), setify([1]), setify([2])]);
+}
+
+#[test]
+fn test_bitmap_select() {
+    use crate::helpers::setify;
+    let seq = vec![setify("A"), setify("B"), setify("C"), setify("D"), setify("E")];
+
+    // Test case from Python example
+    let selected = bitmap_select(0b11010, &seq).collect_vec();
+    assert_eq!(selected, vec![&setify("B"), &setify("D"), &setify("E")]);
+
+    // Additional test cases
+    assert_eq!(bitmap_select(0b00000, &seq).count(), 0);
+    assert_eq!(bitmap_select(0b11111, &seq).count(), 5);
+    assert_eq!(bitmap_select(0b00001, &seq).collect_vec(), vec![&setify("A")]);
+}
+
+#[test]
+fn test_simple_tree_tuple() {
+    let tree = simple_tree_tuple(&[1.into(), 2.into(), 3.into(), 4.into()]);
+    assert_eq!(
+        tree,
+        ContractionTree::Node(vec![
+            ContractionTree::Node(vec![ContractionTree::Node(vec![1.into(), 2.into()]), 3.into()]),
+            4.into()
+        ])
+    );
+}
