@@ -99,7 +99,6 @@ impl BranchBound {
 
 impl BranchBound {
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::type_complexity)]
     fn assess_candidate(
         &mut self,
         k1: &ArrayIndexType,
@@ -112,6 +111,7 @@ impl BranchBound {
         flops: SizeType,
         size: SizeType,
     ) -> Option<BranchBoundCandidate> {
+        // find resulting indices and flops
         let (k12, flops12) = paths::util::calc_k12_flops(inputs, &self.output, remaining, i, j, &self.size_dict);
 
         let size12 = *self
@@ -122,25 +122,26 @@ impl BranchBound {
         let new_flops = flops + flops12;
         let new_size = size.max(size12);
 
-        // Sieve based on current best
+        // sieve based on current best i.e. check flops and size still better
         if !(self.better_fn)(new_flops, new_size, self.best.flops, self.best.size) {
             return None;
         }
 
-        // Sieve based on progress relative to best
-        let current_len = inputs.len();
-        let best_progress = self.best_progress.entry(current_len).or_insert(SizeType::MAX);
+        let inputs_len = inputs.len();
+        let best_progress = self.best_progress.entry(inputs_len).or_insert(SizeType::MAX);
         if new_flops < *best_progress {
+            // compare to how the best method was doing as this point
             *best_progress = new_flops;
         } else if new_flops > self.cutoff_flops_factor * *best_progress {
+            // sieve based on current progress relative to best
             return None;
         }
 
-        // Sieve based on memory limit
+        // sieve based on memory limit
         if let Some(limit) = self.memory_limit
             && size12 > limit
         {
-            // Terminate path here, but check all-terms contract first
+            // terminate path here, but check all-terms contract first
             let oversize_flops =
                 flops + paths::util::compute_oversize_flops(inputs, remaining, &self.output, &self.size_dict);
             if oversize_flops < self.best.flops {
@@ -155,7 +156,7 @@ impl BranchBound {
         // Calculate cost heuristic
         let size1 = self.size_cache[k1];
         let size2 = self.size_cache[k2];
-        let cost = (self.cost_fn)(size12, size1, size2, k12.len(), k1.len(), k2.len());
+        let cost = (self.cost_fn)(size12, size1, size2, 0, 0, 0);
 
         Some(BranchBoundCandidate { cost, flops12, new_flops, new_size, pair: (i, j), k12 })
     }
@@ -165,7 +166,7 @@ impl BranchBound {
     fn branch_iterate(
         &mut self,
         path: &[TensorShapeType],
-        inputs: Vec<ArrayIndexType>,
+        inputs: &[&ArrayIndexType],
         remaining: Vec<usize>,
         flops: SizeType,
         size: SizeType,
@@ -190,8 +191,7 @@ impl BranchBound {
                 continue;
             }
 
-            let inputs_refs = inputs.iter().collect_vec();
-            if let Some(candidate) = self.assess_candidate(k1, k2, i, j, path, &inputs_refs, &remaining, flops, size) {
+            if let Some(candidate) = self.assess_candidate(k1, k2, i, j, path, inputs, &remaining, flops, size) {
                 candidates.push(Reverse(candidate));
             }
         }
@@ -203,10 +203,7 @@ impl BranchBound {
                 let k1 = &inputs[i];
                 let k2 = &inputs[j];
 
-                let inputs_refs = inputs.iter().collect_vec();
-                if let Some(candidate) =
-                    self.assess_candidate(k1, k2, i, j, path, &inputs_refs, &remaining, flops, size)
-                {
+                if let Some(candidate) = self.assess_candidate(k1, k2, i, j, path, inputs, &remaining, flops, size) {
                     candidates.push(Reverse(candidate));
                 }
             }
@@ -222,13 +219,13 @@ impl BranchBound {
             new_remaining.retain(|&x| x != i && x != j);
             new_remaining.push(inputs.len());
 
-            let mut new_inputs = inputs.clone();
-            new_inputs.push(k12);
+            let mut new_inputs = inputs.to_vec();
+            new_inputs.push(&k12);
 
             let mut new_path = path.to_vec();
             new_path.push(vec![i, j]);
 
-            self.branch_iterate(&new_path, new_inputs, new_remaining, new_flops, new_size);
+            self.branch_iterate(&new_path, &new_inputs, new_remaining, new_flops, new_size);
 
             bi += 1;
         }
@@ -245,6 +242,10 @@ impl BranchBound {
         self.best = BranchBoundBest::default();
         self.best_progress.clear();
 
+        // Prepare caches
+        self.size_cache =
+            inputs.iter().map(|&k| (k.clone(), helpers::compute_size_by_dict(k.iter(), size_dict))).collect();
+
         // Convert inputs to Vec of owned sets for easier manipulation
         self.inputs = inputs.iter().map(|s| (*s).clone()).collect();
         self.output = output.clone();
@@ -253,13 +254,7 @@ impl BranchBound {
 
         // Start the recursive process
         let inputs_len = inputs.len();
-        self.branch_iterate(
-            &Vec::new(),
-            self.inputs.clone(),
-            (0..inputs_len).collect(),
-            SizeType::zero(),
-            SizeType::zero(),
-        );
+        self.branch_iterate(&Vec::new(), inputs, (0..inputs_len).collect(), SizeType::zero(), SizeType::zero());
 
         self.path()
     }
