@@ -274,7 +274,7 @@ impl PathOptimizer for BranchBound {
 
 impl From<&str> for BranchBound {
     fn from(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
+        match s.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
             "branch-all" => BranchBound::default(),
             "branch-1" => BranchBound { nbranch: Some(1), ..BranchBound::default() },
             "branch-2" => BranchBound { nbranch: Some(2), ..BranchBound::default() },

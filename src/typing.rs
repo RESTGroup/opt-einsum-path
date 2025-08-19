@@ -41,8 +41,9 @@ impl From<Option<SizeType>> for MemoryLimitType {
 
 impl From<&'static str> for MemoryLimitType {
     fn from(size: &'static str) -> Self {
-        match size {
-            "max_input" => MemoryLimitType::MaxInput,
+        match size.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
+            "max-input" => MemoryLimitType::MaxInput,
+            "" | "none" | "no-limit" => MemoryLimitType::None,
             _ => panic!("Invalid MemoryLimitType string: {size}"),
         }
     }
