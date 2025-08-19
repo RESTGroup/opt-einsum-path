@@ -217,7 +217,7 @@ pub struct DpTerm {
 pub struct DpCompareArgs<'a> {
     // parameters
     pub minimize: &'static str,
-    pub combo_factor: f64,
+    pub combo_factor: SizeType,
     // inputs
     pub inputs: &'a [&'a ArrayIndexType],
     pub size_dict: &'a SizeDictType,
@@ -282,7 +282,7 @@ impl<'a> DpCompareArgs<'a> {
         let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
 
         let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
-        let cost = cost1.max(*cost2).max(mem);
+        let cost = (*cost1).max(*cost2).max(mem);
         if cost <= self.cost_cap
             && xn.get(&s).is_none_or(|term| cost < term.cost)
             && self.memory_limit.is_none_or(|limit| mem <= limit)
@@ -360,8 +360,8 @@ impl<'a> DpCompareArgs<'a> {
 
     pub fn scale(&self) -> SizeType {
         match self.minimize {
-            "flops" | "size" | "write" => SizeType::from_usize(1).unwrap(),
-            "combo" | "limit" => SizeType::from_f64(SizeType::INFINITY).unwrap(),
+            "flops" | "size" | "write" => SizeType::one(),
+            "combo" | "limit" => SizeType::MAX,
             _ => panic!("Unknown minimize type: {}", self.minimize),
         }
     }
@@ -434,7 +434,7 @@ pub struct DynamicProgramming {
     pub minimize: &'static str,
     pub search_outer: bool,
     pub cost_cap: SizeLimitType,
-    pub combo_factor: f64,
+    pub combo_factor: SizeType,
 }
 
 impl Default for DynamicProgramming {
