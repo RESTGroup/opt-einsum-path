@@ -215,15 +215,16 @@ pub struct DpTerm {
 }
 
 pub struct DpCompareArgs<'a> {
+    // parameters
+    pub minimize: &'static str,
+    pub combo_factor: f64,
     // inputs
     pub inputs: &'a [&'a ArrayIndexType],
     pub size_dict: &'a SizeDictType,
     pub all_tensors: usize,
     pub memory_limit: Option<SizeType>,
-    // inputs that will change during the search
     pub cost_cap: SizeType,
-    // temporaries
-    pub g: usize,
+    pub bitmap_g: usize,
 }
 
 impl<'a> DpCompareArgs<'a> {
@@ -245,24 +246,141 @@ impl<'a> DpCompareArgs<'a> {
     ) {
         let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
         let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
-
-        // let i1_cut_i2_wo_output = &(i1 & i2) - output;
         let i1_union_i2 = i1 | i2;
 
         let cost = cost1 + cost2 + helpers::compute_size_by_dict(i1_union_i2.iter(), self.size_dict);
-
         if cost <= self.cost_cap {
             let s = s1 | s2;
-
-            // Check if this is a better path to reach 's'
             if xn.get(&s).is_none_or(|term| cost < term.cost) {
-                let indices = dp_calc_legs(self.g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+                let indices =
+                    dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
                 let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
                 if self.memory_limit.is_none_or(|limit| mem <= limit) {
                     let contract = vec![contract1.clone(), contract2.clone()].into();
                     xn.insert(s, DpTerm { indices, cost, contract });
                 }
             }
+        }
+    }
+
+    /// Like `compare_flops` but sieves the potential contraction based
+    /// on the size of the intermediate tensor created, rather than the number of
+    /// operations, and so calculates that first.
+    pub fn compare_size(
+        &self,
+        xn: &mut BTreeMap<usize, DpTerm>,
+        s1: usize,
+        s2: usize,
+        term1: &DpTerm,
+        term2: &DpTerm,
+        i1_cut_i2_wo_output: &ArrayIndexType,
+    ) {
+        let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
+        let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
+        let i1_union_i2 = i1 | i2;
+        let s = s1 | s2;
+        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+
+        let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
+        let cost = cost1.max(*cost2).max(mem);
+        if cost <= self.cost_cap
+            && xn.get(&s).is_none_or(|term| cost < term.cost)
+            && self.memory_limit.is_none_or(|limit| mem <= limit)
+        {
+            let contract = vec![contract1.clone(), contract2.clone()].into();
+            xn.insert(s, DpTerm { indices, cost, contract });
+        }
+    }
+    /// Like `compare_flops` but sieves the potential contraction based
+    /// on the total size of memory created, rather than the number of
+    /// operations, and so calculates that first.
+    pub fn compare_write(
+        &self,
+        xn: &mut BTreeMap<usize, DpTerm>,
+        s1: usize,
+        s2: usize,
+        term1: &DpTerm,
+        term2: &DpTerm,
+        i1_cut_i2_wo_output: &ArrayIndexType,
+    ) {
+        let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
+        let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
+        let i1_union_i2 = i1 | i2;
+        let s = s1 | s2;
+        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+
+        let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
+        let cost = cost1 + cost2 + mem;
+
+        if cost <= self.cost_cap
+            && xn.get(&s).is_none_or(|term| cost < term.cost)
+            && self.memory_limit.is_none_or(|limit| mem <= limit)
+        {
+            let contract = vec![contract1.clone(), contract2.clone()].into();
+            xn.insert(s, DpTerm { indices, cost, contract });
+        }
+    }
+
+    /// Like `compare_flops` but sieves the potential contraction based
+    /// on some combination of both the flops and size.
+    pub fn compare_combo(
+        &self,
+        xn: &mut BTreeMap<usize, DpTerm>,
+        s1: usize,
+        s2: usize,
+        term1: &DpTerm,
+        term2: &DpTerm,
+        i1_cut_i2_wo_output: &ArrayIndexType,
+    ) {
+        let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
+        let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
+        let i1_union_i2 = i1 | i2;
+        let s = s1 | s2;
+        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+
+        let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
+        let f = helpers::compute_size_by_dict(i1_union_i2.iter(), self.size_dict);
+
+        // Hardcoded to sum: f + self.combo_factor * mem
+        let combined = match self.minimize {
+            "combo" => f + self.combo_factor * mem,
+            "limit" => f.max(self.combo_factor * mem),
+            _ => panic!("Unknown minimize type for combo mode: {}", self.minimize),
+        };
+        let cost = cost1 + cost2 + combined;
+
+        if cost <= self.cost_cap
+            && xn.get(&s).is_none_or(|term| cost < term.cost)
+            && self.memory_limit.is_none_or(|limit| mem <= limit)
+        {
+            let contract = vec![contract1.clone(), contract2.clone()].into();
+            xn.insert(s, DpTerm { indices, cost, contract });
+        }
+    }
+
+    pub fn scale(&self) -> SizeType {
+        match self.minimize {
+            "flops" | "size" | "write" => SizeType::from_usize(1).unwrap(),
+            "combo" | "limit" => SizeType::from_f64(SizeType::INFINITY).unwrap(),
+            _ => panic!("Unknown minimize type: {}", self.minimize),
+        }
+    }
+
+    pub fn compare(
+        &self,
+        xn: &mut BTreeMap<usize, DpTerm>,
+        s1: usize,
+        s2: usize,
+        term1: &DpTerm,
+        term2: &DpTerm,
+        i1_cut_i2_wo_output: &ArrayIndexType,
+    ) {
+        match self.minimize {
+            "flops" => self.compare_flops(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
+            "size" => self.compare_size(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
+            "write" => self.compare_write(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
+            "combo" | "limit" => self.compare_combo(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
+            _ => panic!("Unknown minimize type: {}", self.minimize),
         }
     }
 }
@@ -316,11 +434,17 @@ pub struct DynamicProgramming {
     pub minimize: &'static str,
     pub search_outer: bool,
     pub cost_cap: SizeLimitType,
+    pub combo_factor: f64,
 }
 
 impl Default for DynamicProgramming {
     fn default() -> Self {
-        Self { minimize: "flops", search_outer: false, cost_cap: None.into() }
+        Self {
+            minimize: "flops",
+            search_outer: false,
+            cost_cap: None.into(),
+            combo_factor: SizeType::from_usize(64).unwrap(),
+        }
     }
 }
 
@@ -333,10 +457,10 @@ impl DynamicProgramming {
         memory_limit: Option<SizeType>,
     ) -> PathType {
         // Initialize cost function parameters
-        let naive_scale = 1.0;
-
-        let check_outer =
-            if self.search_outer { |_: &BTreeSet<char>| true } else { |x: &BTreeSet<char>| !x.is_empty() };
+        let check_outer = match self.search_outer {
+            true => |_: &ArrayIndexType| true,
+            false => |x: &ArrayIndexType| !x.is_empty(),
+        };
 
         // Count index occurrences
         let ind_counts: BTreeMap<char, usize> =
@@ -357,7 +481,7 @@ impl DynamicProgramming {
 
         // Initialize subgraph tracking
         let mut subgraph_contractions = inputs_done;
-        let mut subgraph_sizes: Vec<SizeType> = vec![1.0; subgraph_contractions.len()];
+        let mut subgraph_sizes: Vec<SizeType> = vec![SizeType::one(); subgraph_contractions.len()];
 
         // Find disconnected subgraphs
         let subgraphs = if self.search_outer {
@@ -376,7 +500,11 @@ impl DynamicProgramming {
             x[1] = g
                 .iter()
                 .map(|&j| {
-                    (1 << j, DpTerm { indices: inputs[j].clone(), cost: 0.0, contract: inputs_contractions[j].clone() })
+                    (1 << j, DpTerm {
+                        indices: inputs[j].clone(),
+                        cost: SizeType::zero(),
+                        contract: inputs_contractions[j].clone(),
+                    })
                 })
                 .collect();
 
@@ -390,13 +518,29 @@ impl DynamicProgramming {
             };
 
             let cost_increment = if subgraph_inds.is_empty() {
-                2.0
+                SizeType::from_usize(2).unwrap()
             } else {
-                subgraph_inds.iter().map(|c| *size_dict.get(c).unwrap_or(&1) as SizeType).fold(2.0, SizeType::max)
+                subgraph_inds
+                    .iter()
+                    .map(|c| *size_dict.get(c).unwrap_or(&1) as SizeType)
+                    .fold(SizeType::from_usize(2).unwrap(), SizeType::max)
             };
 
-            let dp_args =
-                DpCompareArgs { inputs: &inputs_ref, size_dict, all_tensors, memory_limit, cost_cap, g: bitmap_g };
+            let dp_comp_args = DpCompareArgs {
+                inputs: &inputs_ref,
+                size_dict,
+                all_tensors,
+                memory_limit,
+                cost_cap,
+                bitmap_g,
+                combo_factor: self.combo_factor,
+                minimize: self.minimize,
+            };
+            let naive_scale = dp_comp_args.scale();
+            let naive_cost = naive_scale
+                * SizeType::from_usize(inputs.len()).unwrap()
+                * SizeType::from_usize(size_dict.values().product()).unwrap();
+
             while x.last().unwrap().is_empty() {
                 for n in 2..=g.len() {
                     let mut xn = x[n].clone();
@@ -408,7 +552,7 @@ impl DynamicProgramming {
                                     let i2 = &term2.indices;
                                     let i1_cut_i2_wo_output = &(i1 & i2) - output;
                                     if check_outer(&i1_cut_i2_wo_output) {
-                                        dp_args.compare_flops(&mut xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
+                                        dp_comp_args.compare(&mut xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
                                     }
                                 }
                             }
@@ -417,9 +561,7 @@ impl DynamicProgramming {
                     x[n] = xn;
                 }
 
-                if cost_cap > naive_scale * inputs.len() as SizeType * size_dict.values().product::<usize>() as SizeType
-                    && x.last().unwrap().is_empty()
-                {
+                if cost_cap > naive_cost && x.last().unwrap().is_empty() {
                     panic!("No contraction found for given memory_limit");
                 }
 
