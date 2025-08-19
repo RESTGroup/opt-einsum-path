@@ -223,7 +223,6 @@ pub struct DpCompareArgs<'a> {
     // inputs that will change during the search
     pub cost_cap: SizeType,
     // temporaries
-    pub xn: &'a mut BTreeMap<usize, DpTerm>,
     pub g: usize,
 }
 
@@ -235,11 +234,19 @@ impl<'a> DpCompareArgs<'a> {
     ///    above the cost-cap.
     /// 2. If we've already found a better way of making `s`.
     /// 3. If the intermediate tensor corresponding to `s` is going to break the memory limit.
-    pub fn compare_flops(&mut self, s1: usize, s2: usize, term1: &DpTerm, term2: &DpTerm, output: &ArrayIndexType) {
+    pub fn compare_flops(
+        &self,
+        xn: &mut BTreeMap<usize, DpTerm>,
+        s1: usize,
+        s2: usize,
+        term1: &DpTerm,
+        term2: &DpTerm,
+        i1_cut_i2_wo_output: &ArrayIndexType,
+    ) {
         let DpTerm { indices: i1, cost: cost1, contract: contract1 } = term1;
         let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
 
-        let i1_cut_i2_wo_output = &(i1 & i2) - output;
+        // let i1_cut_i2_wo_output = &(i1 & i2) - output;
         let i1_union_i2 = i1 | i2;
 
         let cost = cost1 + cost2 + helpers::compute_size_by_dict(i1_union_i2.iter(), self.size_dict);
@@ -248,13 +255,12 @@ impl<'a> DpCompareArgs<'a> {
             let s = s1 | s2;
 
             // Check if this is a better path to reach 's'
-            if self.xn.get(&s).is_none_or(|term| cost < term.cost) {
-                let indices =
-                    dp_calc_legs(self.g, self.all_tensors, s, self.inputs, &i1_cut_i2_wo_output, &i1_union_i2);
+            if xn.get(&s).is_none_or(|term| cost < term.cost) {
+                let indices = dp_calc_legs(self.g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
                 let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
                 if self.memory_limit.is_none_or(|limit| mem <= limit) {
                     let contract = vec![contract1.clone(), contract2.clone()].into();
-                    self.xn.insert(s, DpTerm { indices, cost, contract });
+                    xn.insert(s, DpTerm { indices, cost, contract });
                 }
             }
         }
@@ -388,31 +394,27 @@ impl DynamicProgramming {
             } else {
                 subgraph_inds.iter().map(|c| *size_dict.get(c).unwrap_or(&1) as SizeType).fold(2.0, SizeType::max)
             };
+
+            let dp_args =
+                DpCompareArgs { inputs: &inputs_ref, size_dict, all_tensors, memory_limit, cost_cap, g: bitmap_g };
             while x.last().unwrap().is_empty() {
                 for n in 2..=g.len() {
+                    let mut xn = x[n].clone();
                     for m in 1..=(n / 2) {
-                        for (s1, term1) in x[m].clone() {
-                            for (s2, term2) in x[n - m].clone() {
+                        for (&s1, term1) in &x[m] {
+                            for (&s2, term2) in &x[n - m] {
                                 if (s1 & s2 == 0) && (m != n - m || s1 < s2) {
                                     let i1 = &term1.indices;
                                     let i2 = &term2.indices;
                                     let i1_cut_i2_wo_output = &(i1 & i2) - output;
                                     if check_outer(&i1_cut_i2_wo_output) {
-                                        let mut dp_args = DpCompareArgs {
-                                            inputs: &inputs_ref,
-                                            size_dict,
-                                            all_tensors,
-                                            memory_limit,
-                                            cost_cap,
-                                            xn: &mut x[n],
-                                            g: bitmap_g,
-                                        };
-                                        dp_args.compare_flops(s1, s2, &term1, &term2, output);
+                                        dp_args.compare_flops(&mut xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
                                     }
                                 }
                             }
                         }
                     }
+                    x[n] = xn;
                 }
 
                 if cost_cap > naive_scale * inputs.len() as SizeType * size_dict.values().product::<usize>() as SizeType
