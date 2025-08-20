@@ -244,7 +244,7 @@ impl PathOptimizer for RandomGreedy {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         // Handle memory limit by falling back to branch bound
         if memory_limit.is_some() {
             let mut branch_optimizer = paths::branch_bound::BranchBound::from("branch-1");
@@ -286,7 +286,7 @@ impl PathOptimizer for RandomGreedy {
             }
         }
 
-        self.path()
+        Ok(self.path())
     }
 }
 
@@ -297,7 +297,7 @@ pub fn random_greedy(
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
     config: RandomGreedyConfig,
-) -> PathType {
+) -> Result<PathType, String> {
     let mut optimizer = RandomGreedy::new(config);
     optimizer.optimize_path(inputs, output, size_dict, memory_limit)
 }
@@ -308,7 +308,7 @@ pub fn random_greedy_128(
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
-) -> PathType {
+) -> Result<PathType, String> {
     let config = RandomGreedyConfig { max_repeats: 128, ..RandomGreedyConfig::default() };
     random_greedy(inputs, output, size_dict, memory_limit, config)
 }

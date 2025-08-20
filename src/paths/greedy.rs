@@ -391,14 +391,14 @@ pub fn greedy(
     memory_limit: Option<SizeType>,
     choose_fn: Option<&mut GreedyChooseFn>,
     cost_fn: Option<paths::CostFn>,
-) -> PathType {
+) -> Result<PathType, String> {
     if memory_limit.is_some() {
         let mut branch_optimizer = paths::branch_bound::BranchBound::from("branch-1");
         return branch_optimizer.optimize_path(inputs, output, size_dict, memory_limit);
     }
 
     let ssa_path = ssa_greedy_optimize(inputs, output, size_dict, choose_fn, cost_fn);
-    paths::util::ssa_to_linear(&ssa_path)
+    Ok(paths::util::ssa_to_linear(&ssa_path))
 }
 
 #[derive(Default)]
@@ -420,7 +420,7 @@ impl PathOptimizer for Greedy {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         greedy(inputs, output, size_dict, memory_limit, self.choose_fn.as_mut(), self.cost_fn)
     }
 }

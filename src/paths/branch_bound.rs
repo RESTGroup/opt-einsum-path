@@ -237,7 +237,7 @@ impl BranchBound {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         // Reset best state for new optimization
         self.best = BranchBoundBest::default();
         self.best_progress.clear();
@@ -256,7 +256,7 @@ impl BranchBound {
         let inputs_len = inputs.len();
         self.branch_iterate(&Vec::new(), inputs, (0..inputs_len).collect(), SizeType::zero(), SizeType::zero());
 
-        self.path()
+        Ok(self.path())
     }
 }
 
@@ -267,7 +267,7 @@ impl PathOptimizer for BranchBound {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         self.branch_bound(inputs, output, size_dict, memory_limit)
     }
 }

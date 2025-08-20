@@ -320,7 +320,18 @@ mod tests {
         let (_, info) = contract_path(expression, &shapes, true, "dp-size", None).unwrap();
         let min_cost = info.largest_intermediate;
 
-        contract_path(expression, &shapes, true, "dp", min_cost).unwrap();
-        // contract_path(expression, &shapes, true, "dp", min_cost - 1.0).unwrap();
+        assert!(contract_path(expression, &shapes, true, "dp", min_cost).is_ok());
+        assert!(contract_path(expression, &shapes, true, "dp", min_cost - 1.0).is_err());
+    }
+
+    #[test]
+    fn test_can_optimize_outer_products() {
+        let expression = "ab,cd,ef,fg";
+        let shapes = vec![vec![10, 10], vec![10, 10], vec![10, 10], vec![10, 2]];
+        let optimizers = ["branch-2", "branch-all", "optimal", "dp", "greedy"];
+        for &opt in &optimizers {
+            let (path, _) = contract_path(expression, &shapes, true, opt, None).unwrap();
+            assert_eq!(path, vec![vec![2, 3], vec![0, 2], vec![0, 1]]);
+        }
     }
 }

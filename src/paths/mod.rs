@@ -19,7 +19,7 @@ pub trait PathOptimizer {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType;
+    ) -> Result<PathType, String>;
 }
 
 #[non_exhaustive]
@@ -48,7 +48,7 @@ impl PathOptimizer for Auto {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         let mut optimizer: Box<dyn PathOptimizer> = match inputs.len() {
             ..5 => Box::new(paths::optimal::Optimal::default()),
             5..7 => Box::new(paths::branch_bound::BranchBound::from("branch-all")),
@@ -67,7 +67,7 @@ impl PathOptimizer for AutoHq {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         let mut optimizer: Box<dyn PathOptimizer> = match inputs.len() {
             ..6 => Box::new(paths::optimal::Optimal::default()),
             6..17 => Box::new(paths::dp::DynamicProgramming::default()),
@@ -100,8 +100,12 @@ impl paths::PathOptimizer for OptimizeKind {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
-        self.optimizer().optimize_path(inputs, output, size_dict, memory_limit)
+    ) -> Result<PathType, String> {
+        // capture panics from the optimizer and convert to error
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.optimizer().optimize_path(inputs, output, size_dict, memory_limit)
+        }))
+        .unwrap_or_else(|err| Err(format!("Optimizer panicked: {err:?}")))
     }
 }
 
@@ -162,7 +166,7 @@ impl PathOptimizer for &str {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         let mut optimizer = OptimizeKind::from(*self);
         optimizer.optimize_path(inputs, output, size_dict, memory_limit)
     }
@@ -175,7 +179,7 @@ impl PathOptimizer for bool {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         let mut optimizer = OptimizeKind::from(*self);
         optimizer.optimize_path(inputs, output, size_dict, memory_limit)
     }

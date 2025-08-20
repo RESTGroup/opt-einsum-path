@@ -459,7 +459,7 @@ impl DynamicProgramming {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         // Initialize cost function parameters
         let check_outer = match self.search_outer {
             true => |_: &ArrayIndexType| true,
@@ -480,7 +480,7 @@ impl DynamicProgramming {
         let inputs_ref = inputs.iter().collect_vec();
 
         if inputs.is_empty() {
-            return tree_to_sequence(&simple_tree_tuple(&inputs_done));
+            return Ok(tree_to_sequence(&simple_tree_tuple(&inputs_done)));
         }
 
         // Initialize subgraph tracking
@@ -574,7 +574,7 @@ impl DynamicProgramming {
                 dp_comp_args.cost_cap = cost_cap;
 
                 if cost_cap > naive_cost && x.last().unwrap().is_empty() {
-                    panic!("No contraction found for given memory_limit");
+                    return Err("No contraction found for given memory_limit".into());
                 }
             }
 
@@ -588,7 +588,7 @@ impl DynamicProgramming {
             (0..subgraph_sizes.len()).sorted_by(|&a, &b| subgraph_sizes[a].partial_cmp(&subgraph_sizes[b]).unwrap());
         let sorted_contractions = sorted_indices.map(|i| subgraph_contractions[i].clone()).collect_vec();
 
-        tree_to_sequence(&simple_tree_tuple(&sorted_contractions))
+        Ok(tree_to_sequence(&simple_tree_tuple(&sorted_contractions)))
     }
 }
 
@@ -599,7 +599,7 @@ impl PathOptimizer for DynamicProgramming {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         self.find_optimal_path(inputs, output, size_dict, memory_limit)
     }
 }

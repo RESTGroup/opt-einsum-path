@@ -10,7 +10,7 @@ impl PathOptimizer for NoOptimize {
         _output: &ArrayIndexType,
         _size_dict: &SizeDictType,
         _memory_limit: Option<SizeType>,
-    ) -> PathType {
-        vec![(0..inputs.len()).collect()]
+    ) -> Result<PathType, String> {
+        Ok(vec![(0..inputs.len()).collect()])
     }
 }

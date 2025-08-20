@@ -168,7 +168,7 @@ where
         vec![(0..num_ops).collect()]
     } else {
         // Use the optimizer to find the best contraction path
-        optimize.optimize_path(&input_sets_ref, &output_set, &size_dict, memory_arg)
+        optimize.optimize_path(&input_sets_ref, &output_set, &size_dict, memory_arg)?
     };
 
     let mut cost_list = Vec::new();
@@ -367,7 +367,8 @@ fn test_greedy_issue_248() {
     println!("{path_info}");
 
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("random-greedy-128"), None).unwrap();
+    let (path, path_info) =
+        contract_path(subscripts, &shapes, true, OptimizeKind::from("random-greedy-128"), None).unwrap();
     println!("Time (dp): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");

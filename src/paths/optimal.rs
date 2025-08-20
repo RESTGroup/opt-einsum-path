@@ -130,7 +130,7 @@ pub fn optimal(
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
-) -> PathType {
+) -> Result<PathType, String> {
     let mut optimizer =
         Optimal { output: output.clone(), size_dict: size_dict.clone(), memory_limit, ..Default::default() };
 
@@ -138,7 +138,7 @@ pub fn optimal(
     let inputs_indices: Vec<usize> = (0..inputs.len()).collect();
     let flops = SizeType::zero();
     optimizer.optimal_iterate(path, &inputs_indices, inputs, flops);
-    paths::util::ssa_to_linear(&optimizer.best_ssa_path)
+    Ok(paths::util::ssa_to_linear(&optimizer.best_ssa_path))
 }
 
 impl PathOptimizer for Optimal {
@@ -148,7 +148,7 @@ impl PathOptimizer for Optimal {
         output: &ArrayIndexType,
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
-    ) -> PathType {
+    ) -> Result<PathType, String> {
         optimal(inputs, output, size_dict, memory_limit)
     }
 }
@@ -160,7 +160,7 @@ fn playground() {
     let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
     let output = "".chars().collect();
     let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-    let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap()));
+    let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap())).unwrap();
     assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
     let duration = time.elapsed();
     println!("Optimal path found in: {duration:?}");
