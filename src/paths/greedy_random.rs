@@ -208,7 +208,7 @@ impl RandomGreedy {
 
     /// Run a single trial of greedy optimization
     fn run_trial(
-        &self,
+        config: &RandomGreedyConfig,
         r: usize,
         inputs: &[&ArrayIndexType],
         output: &ArrayIndexType,
@@ -216,15 +216,15 @@ impl RandomGreedy {
     ) -> (PathType, SizeType, SizeType) {
         let mut rng = StdRng::seed_from_u64(r as u64);
         // For the first trial, use standard greedy approach
-        let nbranch = self.config.nbranch;
-        let temperature = self.config.temperature;
-        let rel_temperature = self.config.rel_temperature;
+        let nbranch = config.nbranch;
+        let temperature = config.temperature;
+        let rel_temperature = config.rel_temperature;
         let thermal_chooser_fn: GreedyChooseFn = Box::new({
             move |queue, remaining| thermal_chooser(queue, remaining, &mut rng, nbranch, temperature, rel_temperature)
         });
         let mut choose_fn = if r == 0 { Some(thermal_chooser_fn) } else { None };
 
-        let cost_fn = match self.config.cost_fn {
+        let cost_fn = match config.cost_fn {
             "memory-removed-jitter" => Some(paths::util::memory_removed(true)),
             _ => Some(paths::util::memory_removed(false)),
         };
@@ -257,16 +257,25 @@ impl PathOptimizer for RandomGreedy {
         let r_start = self.repeats_start + self.costs.len();
         let r_end = r_start + self.config.max_repeats;
 
-        for r in r_start..r_end {
-            // Check if we've run out of time
-            if let Some(max_time) = self.config.max_time
-                && start_time.elapsed() > max_time
-            {
-                break;
-            }
+        #[cfg(feature = "parallel")]
+        use rayon::prelude::*;
+        #[cfg(feature = "parallel")]
+        let r_iter = (r_start..r_end).into_par_iter();
+        #[cfg(not(feature = "parallel"))]
+        let r_iter = r_start..r_end;
 
-            let (ssa_path, cost, size) = self.run_trial(r, inputs, output, size_dict);
+        let trials: Vec<_> = r_iter
+            .map(|r| {
+                // Check if we've run out of time
+                if self.config.max_time.is_some_and(|max_time| start_time.elapsed() > max_time) {
+                    None
+                } else {
+                    Some(RandomGreedy::run_trial(&self.config, r, inputs, output, size_dict))
+                }
+            })
+            .collect();
 
+        for (ssa_path, cost, size) in trials.into_iter().flatten() {
             // Keep track of all costs and sizes
             self.costs.push(cost);
             self.sizes.push(size);

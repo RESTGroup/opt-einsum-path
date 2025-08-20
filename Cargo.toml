@@ -8,9 +8,13 @@ lazy_static = { version = "1.5" }
 itertools = { version = "0.14" }
 rand = { version = "0.9" }
 num = { version = "0.4" }
+rayon = { version = "1.11", optional = true }
 
 [dev-dependencies]
 rstest = { version = "0.26" }
+
+[features]
+parallel = ["dep:rayon"]
 
 [profile.dev]
 opt-level = 2
