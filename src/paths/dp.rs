@@ -216,7 +216,7 @@ pub struct DpTerm {
 
 pub struct DpCompareArgs<'a> {
     // parameters
-    pub minimize: &'static str,
+    pub minimize: &'a str,
     pub combo_factor: SizeType,
     // inputs
     pub inputs: &'a [&'a ArrayIndexType],
@@ -375,7 +375,11 @@ impl<'a> DpCompareArgs<'a> {
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
     ) {
-        match self.minimize {
+        let minimize_split = self.minimize.split('-').collect_vec();
+        if minimize_split.is_empty() {
+            panic!("Unknown minimize type: {}", self.minimize);
+        }
+        match minimize_split[0] {
             "flops" => self.compare_flops(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
             "size" => self.compare_size(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
             "write" => self.compare_write(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
@@ -431,7 +435,7 @@ pub fn dp_parse_out_single_term_ops(
 
 #[derive(Debug, Clone)]
 pub struct DynamicProgramming {
-    pub minimize: &'static str,
+    pub minimize: String,
     pub search_outer: bool,
     pub cost_cap: SizeLimitType,
     pub combo_factor: SizeType,
@@ -440,7 +444,7 @@ pub struct DynamicProgramming {
 impl Default for DynamicProgramming {
     fn default() -> Self {
         Self {
-            minimize: "flops",
+            minimize: "flops".into(),
             search_outer: false,
             cost_cap: None.into(),
             combo_factor: SizeType::from_usize(64).unwrap(),
@@ -522,11 +526,12 @@ impl DynamicProgramming {
             } else {
                 subgraph_inds
                     .iter()
-                    .map(|c| *size_dict.get(c).unwrap_or(&1) as SizeType)
-                    .fold(SizeType::from_usize(2).unwrap(), SizeType::max)
+                    .map(|c| size_dict[c] as SizeType)
+                    .fold(SizeType::MAX, SizeType::min)
+                    .max(SizeType::from_usize(2).unwrap())
             };
 
-            let dp_comp_args = DpCompareArgs {
+            let mut dp_comp_args = DpCompareArgs {
                 inputs: &inputs_ref,
                 size_dict,
                 all_tensors,
@@ -534,7 +539,7 @@ impl DynamicProgramming {
                 cost_cap,
                 bitmap_g,
                 combo_factor: self.combo_factor,
-                minimize: self.minimize,
+                minimize: &self.minimize,
             };
             let naive_scale = dp_comp_args.scale();
             let naive_cost = naive_scale
@@ -561,11 +566,16 @@ impl DynamicProgramming {
                     x[n] = xn;
                 }
 
+                // avoid overflow
+                cost_cap = match cost_cap >= SizeType::MAX / cost_increment {
+                    true => SizeType::MAX,
+                    false => cost_cap * cost_increment,
+                };
+                dp_comp_args.cost_cap = cost_cap;
+
                 if cost_cap > naive_cost && x.last().unwrap().is_empty() {
                     panic!("No contraction found for given memory_limit");
                 }
-
-                cost_cap *= cost_increment;
             }
 
             let (_, term) = x.last().unwrap().iter().next().unwrap();
@@ -591,6 +601,51 @@ impl PathOptimizer for DynamicProgramming {
         memory_limit: Option<SizeType>,
     ) -> PathType {
         self.find_optimal_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+impl From<&str> for DynamicProgramming {
+    fn from(s: &str) -> Self {
+        let s = s.replace(['_', ' '], "-").to_lowercase();
+        if s == "dp" || s == "dynamic-programming" {
+            return DynamicProgramming::default();
+        }
+        if s.starts_with("dp-") {
+            let minimize = s.strip_prefix("dp-").unwrap();
+            // sanity of minimize
+            if minimize.starts_with("combo") || minimize.starts_with("limit") {
+                let minimize_split = minimize.split('-').collect_vec();
+                if minimize_split.len() > 2 {
+                    panic!("Unknown dynamic programming optimizer: {s}");
+                }
+                match minimize_split.len() {
+                    1 => {
+                        let minimize = minimize_split[0];
+                        if minimize != "combo" && minimize != "limit" {
+                            panic!("Unknown dynamic programming optimizer: {s}");
+                        }
+                        return DynamicProgramming { minimize: minimize.into(), ..Default::default() };
+                    },
+                    2 => {
+                        let minimize = minimize_split[0];
+                        if minimize != "combo" && minimize != "limit" {
+                            panic!("Unknown dynamic programming optimizer: {s}");
+                        }
+                        let combo_factor = match minimize_split[1].parse::<SizeType>() {
+                            Ok(factor) => factor,
+                            Err(_) => panic!("Invalid combo factor in dynamic programming optimizer: {s}"),
+                        };
+                        return DynamicProgramming { minimize: minimize.into(), combo_factor, ..Default::default() };
+                    },
+                    _ => panic!("Unknown dynamic programming optimizer: {s}"),
+                };
+            } else if minimize == "flops" || minimize == "size" || minimize == "write" {
+                return DynamicProgramming { minimize: minimize.into(), ..Default::default() };
+            } else {
+                panic!("Unknown dynamic programming optimizer: {s}");
+            }
+        }
+        panic!("Unknown dynamic programming optimizer: {s}");
     }
 }
 

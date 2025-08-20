@@ -109,7 +109,14 @@ impl FromStr for OptimizeKind {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         use OptimizeKind::*;
-        let optimizer = match s.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
+
+        // special handling for dp;
+        if s.starts_with("dp-") {
+            return Ok(DynamicProgramming(s.into()));
+        }
+
+        // general handling
+        let optimizer = match s.replace(['_', ' '], "-").to_lowercase().as_str() {
             "optimal" | "optimized" => Optimal(Default::default()),
             "no-optimize" => NoOptimize(Default::default()),
             "branch-all" => BranchBound(Default::default()),

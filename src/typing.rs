@@ -25,6 +25,15 @@ pub enum SizeLimitType {
 
 /* #region implementations */
 
+impl From<bool> for SizeLimitType {
+    fn from(b: bool) -> Self {
+        match b {
+            true => SizeLimitType::MaxInput,
+            false => SizeLimitType::None,
+        }
+    }
+}
+
 impl From<SizeType> for SizeLimitType {
     fn from(size: SizeType) -> Self {
         SizeLimitType::Size(size)
@@ -42,7 +51,7 @@ impl From<Option<SizeType>> for SizeLimitType {
 
 impl From<&'static str> for SizeLimitType {
     fn from(size: &'static str) -> Self {
-        match size.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
+        match size.replace(['_', ' '], "-").to_lowercase().as_str() {
             "max-input" => SizeLimitType::MaxInput,
             "" | "none" | "no-limit" => SizeLimitType::None,
             _ => panic!("Invalid MemoryLimitType string: {size}"),

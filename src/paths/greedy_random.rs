@@ -315,7 +315,7 @@ pub fn random_greedy_128(
 
 impl From<&str> for RandomGreedy {
     fn from(s: &str) -> Self {
-        match s.replace("_", "-").replace(" ", "-").to_lowercase().as_str() {
+        match s.replace(['_', ' '], "-").to_lowercase().as_str() {
             "random-greedy" => RandomGreedy::default(),
             "random-greedy-128" => {
                 let config = RandomGreedyConfig { max_repeats: 128, ..RandomGreedyConfig::default() };
