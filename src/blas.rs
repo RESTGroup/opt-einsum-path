@@ -39,11 +39,15 @@ pub fn can_blas(
 
     let input_left = inputs[0];
     let input_right = inputs[1];
+    let left_set: ArrayIndexType = input_left.chars().collect();
+    let right_set: ArrayIndexType = input_right.chars().collect();
+    let left_vec: Vec<char> = input_left.chars().collect();
+    let right_vec: Vec<char> = input_right.chars().collect();
 
     // Check for invalid index patterns
-    for c in input_left.chars().chain(input_right.chars()).collect::<BTreeSet<_>>() {
-        let nl = input_left.chars().filter(|&x| x == c).count();
-        let nr = input_right.chars().filter(|&x| x == c).count();
+    for c in &left_set | &right_set {
+        let nl = left_vec.iter().filter(|&x| x == &c).count();
+        let nr = right_vec.iter().filter(|&x| x == &c).count();
 
         // Can't deal with repeated indices on same input or more than 2 total
         if (nl > 1) || (nr > 1) || (nl + nr > 2) {
@@ -60,8 +64,8 @@ pub fn can_blas(
     // Check for broadcast indices
     if let Some(shapes) = shapes {
         for c in idx_removed {
-            let left_pos = input_left.chars().position(|x| x == *c).unwrap();
-            let right_pos = input_right.chars().position(|x| x == *c).unwrap();
+            let left_pos = left_vec.iter().position(|&x| x == *c).unwrap();
+            let right_pos = right_vec.iter().position(|&x| x == *c).unwrap();
 
             if shapes[0][left_pos] != shapes[1][right_pos] {
                 return None;
@@ -75,12 +79,11 @@ pub fn can_blas(
     }
 
     // Build temporaries
-    let left_set = input_left.chars().collect();
-    let right_set = input_right.chars().collect();
-    let right_vec = input_right.chars().collect_vec();
     let keep_left = &left_set - idx_removed;
     let keep_right = &right_set - idx_removed;
     let rs = idx_removed.len();
+    let input_right_starts: String = right_vec[..rs].iter().cloned().collect();
+    let input_right_ends: String = right_vec[right_vec.len() - rs..].iter().cloned().collect();
 
     // DDOT cases
     if input_left == input_right {
@@ -90,10 +93,10 @@ pub fn can_blas(
     }
 
     // GEMM cases
-    if input_left.ends_with(&right_vec[..rs])
-        || input_left.starts_with(&right_vec[right_vec.len() - rs..])
-        || input_left.ends_with(&right_vec[right_vec.len() - rs..])
-        || input_left.starts_with(&right_vec[..rs])
+    if input_left.ends_with(&input_right_starts)
+        || input_left.starts_with(&input_right_ends)
+        || input_left.ends_with(&input_right_ends)
+        || input_left.starts_with(&input_right_starts)
     {
         return Some("GEMM");
     }

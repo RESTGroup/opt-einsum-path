@@ -1,13 +1,13 @@
 use crate::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Optimal {
     // const after build
     output: ArrayIndexType,
     size_dict: SizeDictType,
     memory_limit: Option<SizeType>,
     // mutable during iteration
-    best_flops: SizeType,
+    best_flops: Option<SizeType>,
     best_ssa_path: PathType,
     size_cache: BTreeMap<ArrayIndexType, SizeType>,
 }
@@ -16,7 +16,7 @@ impl Optimal {
     fn optimal_iterate(&mut self, path: PathType, remaining: &[usize], inputs: &[&ArrayIndexType], flops: SizeType) {
         // Reached end of path (only get here if flops is best found so far)
         if remaining.len() == 1 {
-            self.best_flops = flops;
+            self.best_flops = Some(flops);
             self.best_ssa_path = path;
             return;
         }
@@ -33,7 +33,7 @@ impl Optimal {
 
                 // Sieve based on current best flops
                 let new_flops = flops + flops12;
-                if new_flops >= self.best_flops {
+                if self.best_flops.is_some_and(|best| new_flops >= best) {
                     continue;
                 }
 
@@ -48,8 +48,8 @@ impl Optimal {
                     if *size12 > limit {
                         let oversize_flops = flops
                             + paths::util::compute_oversize_flops(inputs, remaining, &self.output, &self.size_dict);
-                        if oversize_flops < self.best_flops {
-                            self.best_flops = oversize_flops;
+                        if self.best_flops.is_none_or(|best| oversize_flops < best) {
+                            self.best_flops = Some(oversize_flops);
                             let mut new_path = path.clone();
                             new_path.push(remaining.to_vec());
                             self.best_ssa_path = new_path;
@@ -70,19 +70,6 @@ impl Optimal {
 
                 self.optimal_iterate(new_path, &new_remaining, &new_inputs, new_flops);
             }
-        }
-    }
-}
-
-impl Default for Optimal {
-    fn default() -> Self {
-        Optimal {
-            output: ArrayIndexType::default(),
-            size_dict: SizeDictType::default(),
-            memory_limit: None,
-            best_flops: SizeType::MAX,
-            best_ssa_path: Vec::new(),
-            size_cache: BTreeMap::new(),
         }
     }
 }
