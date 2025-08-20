@@ -14,7 +14,7 @@ rayon = { version = "1.11", optional = true }
 rstest = { version = "0.26" }
 
 [features]
-parallel = ["dep:rayon"]
+par_rand = ["dep:rayon"]
 
 [profile.dev]
 opt-level = 2

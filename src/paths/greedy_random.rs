@@ -257,11 +257,11 @@ impl PathOptimizer for RandomGreedy {
         let r_start = self.repeats_start + self.costs.len();
         let r_end = r_start + self.config.max_repeats;
 
-        #[cfg(feature = "parallel")]
+        #[cfg(feature = "par_rand")]
         use rayon::prelude::*;
-        #[cfg(feature = "parallel")]
+        #[cfg(feature = "par_rand")]
         let r_iter = (r_start..r_end).into_par_iter();
-        #[cfg(not(feature = "parallel"))]
+        #[cfg(not(feature = "par_rand"))]
         let r_iter = r_start..r_end;
 
         let trials: Vec<_> = r_iter
