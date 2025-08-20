@@ -365,6 +365,12 @@ fn test_greedy_issue_248() {
     println!("Time (dp): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
+
+    let time = std::time::Instant::now();
+    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("random-greedy-128"), None).unwrap();
+    println!("Time (dp): {:?}", time.elapsed());
+    println!("{path:?}");
+    println!("{path_info}");
 }
 
 #[test]

@@ -1,7 +1,11 @@
 use crate::*;
 
-pub type GreedyChooseFn =
-    fn(&mut BinaryHeap<GreedyContractionType>, &BTreeMap<ArrayIndexType, usize>) -> Option<GreedyContractionType>;
+pub type GreedyChooseFn = Box<
+    dyn FnMut(
+        &mut BinaryHeap<GreedyContractionType>,
+        &BTreeMap<ArrayIndexType, usize>,
+    ) -> Option<GreedyContractionType>,
+>;
 
 /// Type representing the cost of a greedy contraction.
 ///
@@ -35,13 +39,13 @@ impl Ord for GreedyCostType {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct GreedyContractionType {
     /// The cost of the contraction, wrapped in `Reverse` to reverse the order.
-    cost: Reverse<GreedyCostType>,
+    pub cost: Reverse<GreedyCostType>,
     /// The first input array indices being contracted.
-    k1: ArrayIndexType,
+    pub k1: ArrayIndexType,
     /// The second input array indices being contracted.
-    k2: ArrayIndexType,
+    pub k2: ArrayIndexType,
     /// The resulting array indices after the contraction.
-    k12: ArrayIndexType,
+    pub k12: ArrayIndexType,
 }
 
 /// Given k1 and k2 tensors, compute the resulting indices k12 and the cost of the contraction.
@@ -143,7 +147,7 @@ fn update_ref_counts(
 ///
 /// This function will pop candidates only when they are valid (both k1 and k2 must be present in
 /// `remaining`).
-fn simple_chooser(
+pub fn simple_chooser(
     queue: &mut BinaryHeap<GreedyContractionType>,
     remaining: &BTreeMap<ArrayIndexType, usize>,
 ) -> Option<GreedyContractionType> {
@@ -158,11 +162,11 @@ fn simple_chooser(
 /// This is the core function for [`greedy`] but produces a path with static single assignment
 /// ids rather than recycled linear ids. SSA ids are cheaper to work with and easier to reason
 /// about.
-fn ssa_greedy_optimize(
+pub fn ssa_greedy_optimize(
     inputs: &[&ArrayIndexType],
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
-    choose_fn: Option<GreedyChooseFn>,
+    choose_fn: Option<&mut GreedyChooseFn>,
     cost_fn: Option<paths::CostFn>,
 ) -> PathType {
     if inputs.is_empty() {
@@ -176,7 +180,8 @@ fn ssa_greedy_optimize(
 
     // set the function that chooses which contraction to take
     let push_all = choose_fn.is_none();
-    let choose_fn = choose_fn.unwrap_or(simple_chooser);
+    let mut default_chooser: GreedyChooseFn = Box::new(simple_chooser);
+    let choose_fn: &mut GreedyChooseFn = if let Some(choose_fn) = choose_fn { choose_fn } else { &mut default_chooser };
 
     // set the function that assigns a heuristic cost to a possible contraction
     let cost_fn = cost_fn.unwrap_or(paths::util::memory_removed(false));
@@ -384,7 +389,7 @@ pub fn greedy(
     output: &ArrayIndexType,
     size_dict: &SizeDictType,
     memory_limit: Option<SizeType>,
-    choose_fn: Option<GreedyChooseFn>,
+    choose_fn: Option<&mut GreedyChooseFn>,
     cost_fn: Option<paths::CostFn>,
 ) -> PathType {
     if memory_limit.is_some() {
@@ -396,10 +401,16 @@ pub fn greedy(
     paths::util::ssa_to_linear(&ssa_path)
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Default)]
 pub struct Greedy {
     cost_fn: Option<paths::CostFn>,
     choose_fn: Option<GreedyChooseFn>,
+}
+
+impl std::fmt::Debug for Greedy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Greedy").field("cost_fn", &self.cost_fn).field("choose_fn", &self.choose_fn.is_some()).finish()
+    }
 }
 
 impl PathOptimizer for Greedy {
@@ -410,6 +421,6 @@ impl PathOptimizer for Greedy {
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
     ) -> PathType {
-        greedy(inputs, output, size_dict, memory_limit, self.choose_fn, self.cost_fn)
+        greedy(inputs, output, size_dict, memory_limit, self.choose_fn.as_mut(), self.cost_fn)
     }
 }
