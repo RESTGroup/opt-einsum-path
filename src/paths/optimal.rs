@@ -108,10 +108,11 @@ impl Default for Optimal {
 /// # use opt_einsum_path::typing::*;
 /// # use num::FromPrimitive;
 /// # use opt_einsum_path::paths::optimal::optimal;
-/// let inputs = [&"abd".chars().collect(), &"ac".chars().collect(), &"bdc".chars().collect()];
-/// let output = "".chars().collect();
+/// use opt_einsum_path::helpers::setify;
+/// let inputs = [&setify("abd"), &setify("ac"), &setify("bdc")];
+/// let output = setify("");
 /// let size_dict = BTreeMap::from([('a', 1), ('b', 2), ('c', 3), ('d', 4)]);
-/// let path = optimal(&inputs, &output, &size_dict, Some(SizeType::from_usize(5000).unwrap()));
+/// let path = optimal(&inputs, &output, &size_dict, Some(5000.0)).unwrap();
 /// assert_eq!(path, vec![vec![0, 2], vec![0, 1]]);
 /// ```
 ///

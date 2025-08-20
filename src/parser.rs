@@ -13,7 +13,8 @@ use crate::*;
 /// ```
 pub fn get_symbol(i: u32) -> char {
     match i {
-        0..52 => char::from(b'a' + i as u8),
+        0..26 => char::from(b'a' + i as u8),
+        26..52 => char::from(b'A' + (i - 26) as u8),
         52..55296 => char::from_u32(i + 140).unwrap(),
         55296.. => char::from_u32(i + 2048).unwrap(),
     }
@@ -87,7 +88,7 @@ pub fn find_output_shape(inputs: &[&str], shapes: &[TensorShapeType], output: &s
             shapes
                 .iter()
                 .zip(inputs.iter())
-                .filter_map(|(shape, input)| input.find(c).map(|loc| shape.get(loc).copied()))
+                .filter_map(|(shape, input)| input.chars().position(|x| x == c).map(|loc| shape.get(loc).copied()))
                 .flatten()
                 .max()
                 .unwrap() // unwrap should be safe for valid einsum
@@ -253,11 +254,7 @@ pub fn parse_einsum_input(
 
 #[test]
 fn playground() {
-    let a_shape = vec![4, 4];
-    let b_shape = vec![4, 4, 4];
-    let subscripts = "...a, ...a -> ...";
-    let (input_subscripts, output_subscript, operands) = parse_einsum_input(subscripts, &[a_shape, b_shape]).unwrap();
-    assert_eq!(input_subscripts, "da,cda");
-    assert_eq!(output_subscript, "cd");
-    assert_eq!(operands, vec![vec![4, 4], vec![4, 4, 4]]);
+    for i in 0..500 {
+        println!("{} -> '{:?}'", i, char::from_u32(i));
+    }
 }

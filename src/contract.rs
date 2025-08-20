@@ -117,15 +117,15 @@ where
     let mut size_dict = SizeDictType::new();
     for (tnum, term) in input_list.iter().enumerate() {
         let sh = &input_shapes[tnum];
-
-        if sh.len() != term.len() {
+        let term_chars = term.chars().collect_vec();
+        if sh.len() != term_chars.len() {
             return Err(format!(
                 "Einstein sum subscript '{}' does not contain the correct number of indices for operand {tnum}.",
                 input_list[tnum]
             ));
         }
 
-        for (cnum, char) in term.chars().enumerate() {
+        for (cnum, &char) in term_chars.iter().enumerate() {
             let dim = sh[cnum];
 
             if let Some(&existing_dim) = size_dict.get(&char) {

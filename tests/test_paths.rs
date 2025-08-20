@@ -4,6 +4,7 @@ use opt_einsum_path::typing::*;
 use rstest::rstest;
 use std::collections::BTreeMap;
 mod testing;
+use itertools::Itertools;
 
 /*
 - [x] test_size_by_dict
@@ -332,6 +333,18 @@ mod tests {
         for &opt in &optimizers {
             let (path, _) = contract_path(expression, &shapes, true, opt, None).unwrap();
             assert_eq!(path, vec![vec![2, 3], vec![0, 2], vec![0, 1]]);
+        }
+    }
+
+    #[test]
+    fn test_large_path() {
+        for num_symbols in [2, 3, 26, 26 + 26, 256 - 140, 300] {
+            let symbols: String = (0..num_symbols).map(opt_einsum_path::parser::get_symbol).collect();
+            let dimension_dict: BTreeMap<char, usize> = symbols.chars().zip([2, 3, 4].into_iter().cycle()).collect();
+            let expression: String =
+                symbols.chars().collect_vec().windows(2).map(|w| w.iter().collect::<String>()).collect_vec().join(",");
+            let tensors = build_shapes(&expression, Some(&dimension_dict), true).unwrap();
+            let _ = contract_path(&expression, &tensors, true, "greedy", None).unwrap();
         }
     }
 }

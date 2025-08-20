@@ -77,6 +77,7 @@ pub fn can_blas(
     // Build temporaries
     let left_set = input_left.chars().collect();
     let right_set = input_right.chars().collect();
+    let right_vec = input_right.chars().collect_vec();
     let keep_left = &left_set - idx_removed;
     let keep_right = &right_set - idx_removed;
     let rs = idx_removed.len();
@@ -89,10 +90,10 @@ pub fn can_blas(
     }
 
     // GEMM cases
-    if input_left.ends_with(&input_right[..rs])
-        || input_left.starts_with(&input_right[input_right.len() - rs..])
-        || input_left.ends_with(&input_right[input_right.len() - rs..])
-        || input_left.starts_with(&input_right[..rs])
+    if input_left.ends_with(&right_vec[..rs])
+        || input_left.starts_with(&right_vec[right_vec.len() - rs..])
+        || input_left.ends_with(&right_vec[right_vec.len() - rs..])
+        || input_left.starts_with(&right_vec[..rs])
     {
         return Some("GEMM");
     }
