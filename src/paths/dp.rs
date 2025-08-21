@@ -471,12 +471,6 @@ impl DynamicProgramming {
         let uint_1 = BigUint::from(1u32);
         let uint_0 = BigUint::from(0u32);
 
-        // Initialize cost function parameters
-        let check_outer = match self.search_outer {
-            true => |_: &ArrayIndexType| true,
-            false => |x: &ArrayIndexType| !x.is_empty(),
-        };
-
         // Count index occurrences
         let ind_counts: BTreeMap<char, usize> =
             inputs.iter().flat_map(|inds| inds.iter()).chain(output.iter()).fold(BTreeMap::new(), |mut counts, &c| {
@@ -557,6 +551,12 @@ impl DynamicProgramming {
                 minimize: &self.minimize,
             };
 
+            fn has_common_bits(s1: &BigUint, s2: &BigUint) -> bool {
+                let digits1 = s1.iter_u64_digits();
+                let digits2 = s2.iter_u64_digits();
+                digits1.zip(digits2).any(|(d1, d2)| d1 & d2 != 0)
+            }
+
             while x.last().unwrap().is_empty() {
                 for n in 2..=g.len() {
                     let (xn_left, xn_right) = x.split_at_mut(n);
@@ -564,11 +564,18 @@ impl DynamicProgramming {
                     for m in 1..=(n / 2) {
                         for (s1, term1) in &xn_left[m] {
                             for (s2, term2) in &xn_left[n - m] {
-                                if (s1 & s2 == uint_0) && (m != n - m || s1 < s2) {
+                                // EFFICIENCY: `s1 & s2 != 0` changes to `!has_common_bits(s1, s2)`
+                                if !has_common_bits(s1, s2) && (m != n - m || s1 < s2) {
                                     let i1 = &term1.indices;
                                     let i2 = &term2.indices;
-                                    let i1_cut_i2_wo_output = &(i1 & i2) - output;
-                                    if check_outer(&i1_cut_i2_wo_output) {
+                                    // EFFICIENCY: use iterators instead of `&` and `-` for set operations
+                                    // let i1_cut_i2_wo_output = &(i1 & i2) - output;
+                                    let i1_cut_i2_wo_output: ArrayIndexType = i1
+                                        .iter()
+                                        .filter(|&&c| i2.contains(&c) && !output.contains(&c))
+                                        .cloned()
+                                        .collect();
+                                    if !self.search_outer && !i1_cut_i2_wo_output.is_empty() {
                                         dp_comp_args.compare(xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
                                     }
                                 }
