@@ -2,6 +2,8 @@
 name = "opt-einsum-path"
 version = "0.1.0"
 edition = "2024"
+description = "Einsum path optimization for tensor contraction (opt_einsum in Rust, without contraction)"
+readme = "readme.md"
 
 repository = "https://github.com/RESTGroup/opt-einsum-path"
 keywords = ["scientific", "einsum", "chemistry", "physics", "tensor"]

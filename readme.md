@@ -1,4 +1,4 @@
-# Einsum Path Contraction Optimization for Tensor Contraction
+# Einsum Path Optimization for Tensor Contraction
 
 This crate performs **path optimization for tensor contraction** (not performing the actual tensor contraction computation).
 
