@@ -264,9 +264,9 @@ impl<'a> DpCompareArgs<'a> {
         }
     }
 
-    /// Like `compare_flops` but sieves the potential contraction based
-    /// on the size of the intermediate tensor created, rather than the number of
-    /// operations, and so calculates that first.
+    /// Like `compare_flops` but sieves the potential contraction based on the size of the
+    /// intermediate tensor created, rather than the number of operations, and so calculates that
+    /// first.
     pub fn compare_size(
         &self,
         xn: &mut BTreeMap<BigUint, DpTerm>,
@@ -293,9 +293,8 @@ impl<'a> DpCompareArgs<'a> {
             xn.insert(s, DpTerm { indices, cost, contract });
         }
     }
-    /// Like `compare_flops` but sieves the potential contraction based
-    /// on the total size of memory created, rather than the number of
-    /// operations, and so calculates that first.
+    /// Like `compare_flops` but sieves the potential contraction based on the total size of memory
+    /// created, rather than the number of operations, and so calculates that first.
     pub fn compare_write(
         &self,
         xn: &mut BTreeMap<BigUint, DpTerm>,

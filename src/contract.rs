@@ -93,6 +93,7 @@ impl std::fmt::Display for PathInfo {
 
 /* #endregion */
 
+#[doc = include_str!("contract_path.md")]
 pub fn contract_path(
     subscripts: &str,
     operands: &[TensorShapeType],

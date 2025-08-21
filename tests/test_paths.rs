@@ -347,4 +347,14 @@ mod tests {
             let _ = contract_path(&expression, &tensors, "greedy", None).unwrap();
         }
     }
+
+    #[test]
+    fn test_ellipsis_in_path() {
+        let expression = "...ij,...jk->...ik";
+        let shapes = vec![vec![2, 3, 4, 5], vec![2, 3, 5, 6]];
+        let (path, info) = contract_path(expression, &shapes, "optimal", None).unwrap();
+        assert_eq!(path, vec![vec![0, 1]]);
+        assert_eq!(info.opt_cost, 1440 as _);
+        println!("{info}");
+    }
 }

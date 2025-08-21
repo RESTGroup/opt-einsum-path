@@ -162,7 +162,7 @@ pub fn parse_einsum_input(
     }
 
     // Parse ellipses
-    let mut subscripts = subscripts.to_string();
+    let mut subscripts = einsum_str.to_string();
     if einsum_str.contains('.') {
         let used: String = einsum_str.replace(".", "").replace(",", "").replace("->", "");
         let ellipse_inds = gen_unused_symbols(&used, operands.iter().map(|s| s.len()).max().unwrap_or(0));

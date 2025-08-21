@@ -118,6 +118,9 @@ impl FromStr for OptimizeKind {
         if s.starts_with("dp-") {
             return Ok(DynamicProgramming(s.into()));
         }
+        if s.starts_with("random-greedy") {
+            return Ok(RandomGreedy(s.into()));
+        }
 
         // general handling
         let optimizer = match s.replace(['_', ' '], "-").to_lowercase().as_str() {
@@ -128,8 +131,6 @@ impl FromStr for OptimizeKind {
             "branch-1" => BranchBound("branch-1".into()),
             "greedy" | "eager" | "opportunistic" => Greedy(Default::default()),
             "dp" | "dynamic-programming" => DynamicProgramming(Default::default()),
-            "random-greedy" => RandomGreedy(Default::default()),
-            "random-greedy-128" => RandomGreedy("random-greedy-128".into()),
             "auto" => Auto(Default::default()),
             "auto-hq" => AutoHq(Default::default()),
             _ => Err(format!("Unknown optimization kind: {s}"))?,

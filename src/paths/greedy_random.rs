@@ -324,13 +324,17 @@ pub fn random_greedy_128(
 
 impl From<&str> for RandomGreedy {
     fn from(s: &str) -> Self {
-        match s.replace(['_', ' '], "-").to_lowercase().as_str() {
-            "random-greedy" => RandomGreedy::default(),
-            "random-greedy-128" => {
-                let config = RandomGreedyConfig { max_repeats: 128, ..RandomGreedyConfig::default() };
-                RandomGreedy::new(config)
-            },
-            _ => panic!("Unknown RandomGreedy configuration: {s}"),
+        let s = s.trim().replace(['_', ' '], "-").to_lowercase();
+        assert!(s.starts_with("random-greedy"), "RandomGreedy must start with 'random-greedy'");
+        let v = s.strip_prefix("random-greedy").unwrap();
+        if v.is_empty() {
+            RandomGreedy::default()
+        } else {
+            let max_repeats = v.replace("-", "").parse::<usize>().unwrap_or_else(|_| {
+                panic!("Invalid RandomGreedy configuration: {s}. Expected format: 'random-greedy-<max_repeats>'")
+            });
+            let config = RandomGreedyConfig { max_repeats, ..RandomGreedyConfig::default() };
+            RandomGreedy::new(config)
         }
     }
 }

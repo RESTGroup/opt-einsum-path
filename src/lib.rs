@@ -1,3 +1,7 @@
+//! # Notes for API Document
+//!
+//! The most important function is [`contract_path`], which is used to find the optimal contraction
+//! path for a given einsum expression.
 #![doc = include_str!("../readme.md")]
 pub mod blas;
 pub mod contract;
