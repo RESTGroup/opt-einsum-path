@@ -1,6 +1,6 @@
 [package]
 name = "opt-einsum-path"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Einsum path optimization for tensor contraction (opt_einsum in Rust, without contraction)"
 readme = "readme.md"
@@ -21,6 +21,7 @@ rayon = { version = "1.11", optional = true }
 rstest = { version = "0.26" }
 
 [features]
+default = []
 par_rand = ["dep:rayon"]
 
 [profile.dev]
