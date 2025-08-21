@@ -14,5 +14,4 @@ jobs:
 
       - name: test crate
         run: |
-          cd opt-einsum-path
           cargo test
