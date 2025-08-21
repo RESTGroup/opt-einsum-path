@@ -8,9 +8,13 @@ use rstest::rstest;
 #[ignore = "This test is computationally expensive and should be run separately."]
 #[case("dp", 50)]
 #[ignore = "This test is computationally expensive and should be run separately."]
-#[case("greedy", 200)]
+#[case("optimal", 5)]
 #[ignore = "This test is computationally expensive and should be run separately."]
 #[case("branch-1", 100)]
+#[ignore = "This test is computationally expensive and should be run separately."]
+#[case("greedy", 200)]
+#[ignore = "This test is computationally expensive and should be run separately."]
+#[case("random-greedy-128", 200)]
 fn test_large(#[case] optimizer: &str, #[case] n: u32) {
     println!("Testing large path optimization with n = {n} and opt = {optimizer}");
 

@@ -70,8 +70,8 @@ impl PathOptimizer for AutoHq {
     ) -> Result<PathType, String> {
         let mut optimizer: Box<dyn PathOptimizer> = match inputs.len() {
             ..6 => Box::new(paths::optimal::Optimal::default()),
-            6..17 => Box::new(paths::dp::DynamicProgramming::default()),
-            17.. => Box::new(paths::greedy_random::RandomGreedy::from("random-greedy-128")),
+            6..20 => Box::new(paths::dp::DynamicProgramming::default()),
+            20.. => Box::new(paths::greedy_random::RandomGreedy::from("random-greedy-128")),
         };
         optimizer.optimize_path(inputs, output, size_dict, memory_limit)
     }
