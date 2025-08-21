@@ -359,11 +359,7 @@ impl<'a> DpCompareArgs<'a> {
     }
 
     pub fn scale(&self) -> SizeType {
-        match self.minimize {
-            "flops" | "size" | "write" => SizeType::one(),
-            "combo" | "limit" => SizeType::MAX,
-            _ => panic!("Unknown minimize type: {}", self.minimize),
-        }
+        get_scale_from_minimize(self.minimize)
     }
 
     pub fn compare(
@@ -386,6 +382,14 @@ impl<'a> DpCompareArgs<'a> {
             "combo" | "limit" => self.compare_combo(xn, s1, s2, term1, term2, i1_cut_i2_wo_output),
             _ => panic!("Unknown minimize type: {}", self.minimize),
         }
+    }
+}
+
+pub fn get_scale_from_minimize(minimize: &str) -> SizeType {
+    match minimize {
+        "flops" | "size" | "write" => SizeType::one(),
+        "combo" | "limit" => SizeType::MAX,
+        _ => panic!("Unknown minimize type: {minimize}"),
     }
 }
 
@@ -446,7 +450,7 @@ impl Default for DynamicProgramming {
         Self {
             minimize: "flops".into(),
             search_outer: false,
-            cost_cap: None.into(),
+            cost_cap: true.into(),
             combo_factor: SizeType::from_usize(64).unwrap(),
         }
     }
@@ -495,6 +499,10 @@ impl DynamicProgramming {
         };
 
         let all_tensors = (1 << inputs.len()) - 1;
+        let naive_scale = get_scale_from_minimize(&self.minimize);
+        let naive_cost = naive_scale
+            * SizeType::from_usize(inputs.len()).unwrap()
+            * size_dict.values().map(|v| SizeType::from_usize(*v).unwrap()).product::<SizeType>();
 
         for g in subgraphs {
             let bitmap_g = g.iter().fold(0, |acc, &j| acc | (1 << j));
@@ -541,10 +549,6 @@ impl DynamicProgramming {
                 combo_factor: self.combo_factor,
                 minimize: &self.minimize,
             };
-            let naive_scale = dp_comp_args.scale();
-            let naive_cost = naive_scale
-                * SizeType::from_usize(inputs.len()).unwrap()
-                * SizeType::from_usize(size_dict.values().product()).unwrap();
 
             while x.last().unwrap().is_empty() {
                 for n in 2..=g.len() {
