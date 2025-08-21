@@ -196,11 +196,6 @@ where
         let mut tmp_inputs = contract_inds.iter().map(|&i| current_input_list.remove(i)).collect_vec();
         let mut tmp_shapes = contract_inds.iter().map(|&i| current_input_shapes.remove(i)).collect_vec();
 
-        // Revert the order to normal
-        contract_inds.reverse();
-        tmp_inputs.reverse();
-        tmp_shapes.reverse();
-
         let do_blas = match use_blas {
             true => blas::can_blas(
                 &tmp_inputs.iter().map(|s| s.as_str()).collect_vec(),
@@ -227,6 +222,11 @@ where
             &tmp_shapes,
             &idx_result,
         );
+
+        // Revert the order to normal
+        contract_inds.reverse();
+        tmp_inputs.reverse();
+        tmp_shapes.reverse();
 
         current_input_list.push(idx_result.clone());
         current_input_shapes.push(shp_result);
