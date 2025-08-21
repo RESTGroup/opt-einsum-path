@@ -165,8 +165,9 @@ pub fn find_disconnected_subgraphs(inputs: &[ArrayIndexType], output: &ArrayInde
 /// # Returns
 ///
 /// An iterator yielding selected elements from `seq` where the corresponding bit in `s` is set.
-pub fn bitmap_select<T>(s: usize, seq: &[T]) -> impl Iterator<Item = &T> {
-    seq.iter().enumerate().filter(move |(i, _)| (s >> i) & 1 == 1).map(|(_, x)| x)
+pub fn bitmap_select<'t, T>(s: &BigUint, seq: &'t [T]) -> impl Iterator<Item = &'t T> {
+    let uint_1 = BigUint::from_u32(1).unwrap();
+    seq.iter().enumerate().filter(move |(i, _)| (s >> i) & &uint_1 == uint_1).map(|(_, x)| x)
 }
 
 // Calculates the effective outer indices of the intermediate tensor
@@ -185,9 +186,9 @@ pub fn bitmap_select<T>(s: usize, seq: &[T]) -> impl Iterator<Item = &T> {
 ///
 /// The effective outer indices of the intermediate tensor
 pub fn dp_calc_legs(
-    g: usize,
-    all_tensors: usize,
-    s: usize,
+    g: &BigUint,
+    all_tensors: &BigUint,
+    s: &BigUint,
     inputs: &[&ArrayIndexType],
     i1_cut_i2_wo_output: &ArrayIndexType,
     i1_union_i2: &ArrayIndexType,
@@ -196,8 +197,8 @@ pub fn dp_calc_legs(
     let r = g & (all_tensors ^ s);
 
     // indices of remaining indices:
-    let i_r = if r != 0 {
-        bitmap_select(r, inputs).fold(ArrayIndexType::new(), |acc, s| &acc | s)
+    let i_r = if r != BigUint::ZERO {
+        bitmap_select(&r, inputs).flat_map(|x| x.iter()).collect_vec().into_iter().copied().collect()
     } else {
         ArrayIndexType::new()
     };
@@ -221,10 +222,10 @@ pub struct DpCompareArgs<'a> {
     // inputs
     pub inputs: &'a [&'a ArrayIndexType],
     pub size_dict: &'a SizeDictType,
-    pub all_tensors: usize,
+    pub all_tensors: BigUint,
     pub memory_limit: Option<SizeType>,
     pub cost_cap: SizeType,
-    pub bitmap_g: usize,
+    pub bitmap_g: BigUint,
 }
 
 impl<'a> DpCompareArgs<'a> {
@@ -237,9 +238,9 @@ impl<'a> DpCompareArgs<'a> {
     /// 3. If the intermediate tensor corresponding to `s` is going to break the memory limit.
     pub fn compare_flops(
         &self,
-        xn: &mut BTreeMap<usize, DpTerm>,
-        s1: usize,
-        s2: usize,
+        xn: &mut BTreeMap<BigUint, DpTerm>,
+        s1: &BigUint,
+        s2: &BigUint,
         term1: &DpTerm,
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
@@ -253,7 +254,7 @@ impl<'a> DpCompareArgs<'a> {
             let s = s1 | s2;
             if xn.get(&s).is_none_or(|term| cost < term.cost) {
                 let indices =
-                    dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+                    dp_calc_legs(&self.bitmap_g, &self.all_tensors, &s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
                 let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
                 if self.memory_limit.is_none_or(|limit| mem <= limit) {
                     let contract = vec![contract1.clone(), contract2.clone()].into();
@@ -268,9 +269,9 @@ impl<'a> DpCompareArgs<'a> {
     /// operations, and so calculates that first.
     pub fn compare_size(
         &self,
-        xn: &mut BTreeMap<usize, DpTerm>,
-        s1: usize,
-        s2: usize,
+        xn: &mut BTreeMap<BigUint, DpTerm>,
+        s1: &BigUint,
+        s2: &BigUint,
         term1: &DpTerm,
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
@@ -279,7 +280,8 @@ impl<'a> DpCompareArgs<'a> {
         let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
         let i1_union_i2 = i1 | i2;
         let s = s1 | s2;
-        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+        let indices =
+            dp_calc_legs(&self.bitmap_g, &self.all_tensors, &s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
 
         let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
         let cost = (*cost1).max(*cost2).max(mem);
@@ -296,9 +298,9 @@ impl<'a> DpCompareArgs<'a> {
     /// operations, and so calculates that first.
     pub fn compare_write(
         &self,
-        xn: &mut BTreeMap<usize, DpTerm>,
-        s1: usize,
-        s2: usize,
+        xn: &mut BTreeMap<BigUint, DpTerm>,
+        s1: &BigUint,
+        s2: &BigUint,
         term1: &DpTerm,
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
@@ -307,7 +309,8 @@ impl<'a> DpCompareArgs<'a> {
         let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
         let i1_union_i2 = i1 | i2;
         let s = s1 | s2;
-        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+        let indices =
+            dp_calc_legs(&self.bitmap_g, &self.all_tensors, &s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
 
         let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
         let cost = cost1 + cost2 + mem;
@@ -325,9 +328,9 @@ impl<'a> DpCompareArgs<'a> {
     /// on some combination of both the flops and size.
     pub fn compare_combo(
         &self,
-        xn: &mut BTreeMap<usize, DpTerm>,
-        s1: usize,
-        s2: usize,
+        xn: &mut BTreeMap<BigUint, DpTerm>,
+        s1: &BigUint,
+        s2: &BigUint,
         term1: &DpTerm,
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
@@ -336,7 +339,8 @@ impl<'a> DpCompareArgs<'a> {
         let DpTerm { indices: i2, cost: cost2, contract: contract2 } = term2;
         let i1_union_i2 = i1 | i2;
         let s = s1 | s2;
-        let indices = dp_calc_legs(self.bitmap_g, self.all_tensors, s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
+        let indices =
+            dp_calc_legs(&self.bitmap_g, &self.all_tensors, &s, self.inputs, i1_cut_i2_wo_output, &i1_union_i2);
 
         let mem = helpers::compute_size_by_dict(indices.iter(), self.size_dict);
         let f = helpers::compute_size_by_dict(i1_union_i2.iter(), self.size_dict);
@@ -364,9 +368,9 @@ impl<'a> DpCompareArgs<'a> {
 
     pub fn compare(
         &self,
-        xn: &mut BTreeMap<usize, DpTerm>,
-        s1: usize,
-        s2: usize,
+        xn: &mut BTreeMap<BigUint, DpTerm>,
+        s1: &BigUint,
+        s2: &BigUint,
         term1: &DpTerm,
         term2: &DpTerm,
         i1_cut_i2_wo_output: &ArrayIndexType,
@@ -464,6 +468,9 @@ impl DynamicProgramming {
         size_dict: &SizeDictType,
         memory_limit: Option<SizeType>,
     ) -> Result<PathType, String> {
+        let uint_1 = BigUint::from(1u32);
+        let uint_0 = BigUint::from(0u32);
+
         // Initialize cost function parameters
         let check_outer = match self.search_outer {
             true => |_: &ArrayIndexType| true,
@@ -498,21 +505,21 @@ impl DynamicProgramming {
             find_disconnected_subgraphs(&inputs, output).into_iter().map(|s| s.into_iter().collect()).collect()
         };
 
-        let all_tensors = (1 << inputs.len()) - 1;
+        let all_tensors = (&uint_1 << inputs.len()) - &uint_1;
         let naive_scale = get_scale_from_minimize(&self.minimize);
         let naive_cost = naive_scale
             * SizeType::from_usize(inputs.len()).unwrap()
             * size_dict.values().map(|v| SizeType::from_usize(*v).unwrap()).product::<SizeType>();
 
         for g in subgraphs {
-            let bitmap_g = g.iter().fold(0, |acc, &j| acc | (1 << j));
+            let bitmap_g = g.iter().fold(uint_0.clone(), |acc, &j| acc | (&uint_1 << j));
 
             // Initialize DP table
-            let mut x: Vec<BTreeMap<usize, DpTerm>> = vec![BTreeMap::new(); g.len() + 1];
+            let mut x: Vec<BTreeMap<BigUint, DpTerm>> = vec![BTreeMap::new(); g.len() + 1];
             x[1] = g
                 .iter()
                 .map(|&j| {
-                    (1 << j, DpTerm {
+                    (&uint_1 << j, DpTerm {
                         indices: inputs[j].clone(),
                         cost: SizeType::zero(),
                         contract: inputs_contractions[j].clone(),
@@ -521,7 +528,7 @@ impl DynamicProgramming {
                 .collect();
 
             // Initialize cost cap
-            let subgraph_inds = bitmap_select(bitmap_g, &inputs).flat_map(|inds| inds.iter().copied()).collect();
+            let subgraph_inds = bitmap_select(&bitmap_g, &inputs).flat_map(|inds| inds.iter().copied()).collect();
 
             let mut cost_cap = match self.cost_cap {
                 SizeLimitType::Size(cap) => cap,
@@ -542,7 +549,7 @@ impl DynamicProgramming {
             let mut dp_comp_args = DpCompareArgs {
                 inputs: &inputs_ref,
                 size_dict,
-                all_tensors,
+                all_tensors: all_tensors.clone(),
                 memory_limit,
                 cost_cap,
                 bitmap_g,
@@ -552,22 +559,22 @@ impl DynamicProgramming {
 
             while x.last().unwrap().is_empty() {
                 for n in 2..=g.len() {
-                    let mut xn = x[n].clone();
+                    let (xn_left, xn_right) = x.split_at_mut(n);
+                    let xn = &mut xn_right[0];
                     for m in 1..=(n / 2) {
-                        for (&s1, term1) in &x[m] {
-                            for (&s2, term2) in &x[n - m] {
-                                if (s1 & s2 == 0) && (m != n - m || s1 < s2) {
+                        for (s1, term1) in &xn_left[m] {
+                            for (s2, term2) in &xn_left[n - m] {
+                                if (s1 & s2 == uint_0) && (m != n - m || s1 < s2) {
                                     let i1 = &term1.indices;
                                     let i2 = &term2.indices;
                                     let i1_cut_i2_wo_output = &(i1 & i2) - output;
                                     if check_outer(&i1_cut_i2_wo_output) {
-                                        dp_comp_args.compare(&mut xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
+                                        dp_comp_args.compare(xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
                                     }
                                 }
                             }
                         }
                     }
-                    x[n] = xn;
                 }
 
                 // avoid overflow
@@ -687,13 +694,13 @@ fn test_bitmap_select() {
     let seq = vec![setify("A"), setify("B"), setify("C"), setify("D"), setify("E")];
 
     // Test case from Python example
-    let selected = bitmap_select(0b11010, &seq).collect_vec();
+    let selected = bitmap_select(&BigUint::from(0b11010_u32), &seq).collect_vec();
     assert_eq!(selected, vec![&setify("B"), &setify("D"), &setify("E")]);
 
     // Additional test cases
-    assert_eq!(bitmap_select(0b00000, &seq).count(), 0);
-    assert_eq!(bitmap_select(0b11111, &seq).count(), 5);
-    assert_eq!(bitmap_select(0b00001, &seq).collect_vec(), vec![&setify("A")]);
+    assert_eq!(bitmap_select(&BigUint::from(0b00000_u32), &seq).count(), 0);
+    assert_eq!(bitmap_select(&BigUint::from(0b11111_u32), &seq).count(), 5);
+    assert_eq!(bitmap_select(&BigUint::from(0b00001_u32), &seq).collect_vec(), vec![&setify("A")]);
 }
 
 #[test]
