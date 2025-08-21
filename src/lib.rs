@@ -1,3 +1,4 @@
+#![doc = include_str!("../readme.md")]
 pub mod blas;
 pub mod contract;
 pub mod helpers;
@@ -5,6 +6,7 @@ pub mod parser;
 pub mod paths;
 pub mod typing;
 
+pub use contract::contract_path;
 pub use paths::PathOptimizer;
 
 pub(crate) use crate::typing::*;

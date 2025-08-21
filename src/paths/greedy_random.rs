@@ -33,7 +33,7 @@ use std::time::{Duration, Instant};
 ///
 /// # Returns
 ///
-/// Option<GreedyContractionType> where Some contains the chosen contraction
+/// `Option<GreedyContractionType>` where Some contains the chosen contraction
 pub fn thermal_chooser(
     queue: &mut BinaryHeap<GreedyContractionType>,
     remaining: &BTreeMap<ArrayIndexType, usize>,

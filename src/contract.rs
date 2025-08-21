@@ -93,16 +93,12 @@ impl std::fmt::Display for PathInfo {
 
 /* #endregion */
 
-pub fn contract_path<Opt>(
+pub fn contract_path(
     subscripts: &str,
     operands: &[TensorShapeType],
-    use_blas: bool,
-    mut optimize: Opt,
+    mut optimize: impl PathOptimizer,
     memory_limit: impl Into<SizeLimitType>,
-) -> Result<(PathType, PathInfo), String>
-where
-    Opt: PathOptimizer,
-{
+) -> Result<(PathType, PathInfo), String> {
     // Parse einsum input
     let (input_subscripts, output_subscript, input_shapes) = parser::parse_einsum_input(subscripts, operands)?;
 
@@ -196,15 +192,12 @@ where
         let mut tmp_inputs = contract_inds.iter().map(|&i| current_input_list.remove(i)).collect_vec();
         let mut tmp_shapes = contract_inds.iter().map(|&i| current_input_shapes.remove(i)).collect_vec();
 
-        let do_blas = match use_blas {
-            true => blas::can_blas(
-                &tmp_inputs.iter().map(|s| s.as_str()).collect_vec(),
-                &out_inds.iter().join(""),
-                &idx_removed,
-                Some(&tmp_shapes),
-            ),
-            false => None,
-        };
+        let do_blas = blas::can_blas(
+            &tmp_inputs.iter().map(|s| s.as_str()).collect_vec(),
+            &out_inds.iter().join(""),
+            &idx_removed,
+            Some(&tmp_shapes),
+        );
 
         // Last contraction
         let idx_result = if cnum == path_tuple.len() - 1 {
@@ -278,7 +271,7 @@ fn test_contract_path() {
     let b_shape = vec![4, 4];
     let subscripts = "ij,jk->ik";
     let (path, path_info) =
-        contract_path(subscripts, &[a_shape, b_shape], true, OptimizeKind::from("optimal"), None).unwrap();
+        contract_path(subscripts, &[a_shape, b_shape], OptimizeKind::from("optimal"), None).unwrap();
 
     assert_eq!(path.len(), 1);
     assert_eq!(path_info.input_subscripts, "ij,jk");
@@ -301,7 +294,7 @@ fn test_contract_path_issue_254() {
     let subscripts = "bgk,bkd,bk->bgd";
     let time = std::time::Instant::now();
     let (path, path_info) =
-        contract_path(subscripts, &[a_shape, v_shape, s_shape], true, OptimizeKind::from("optimal"), None).unwrap();
+        contract_path(subscripts, &[a_shape, v_shape, s_shape], OptimizeKind::from("optimal"), None).unwrap();
     println!("Time: {:?}", time.elapsed());
 
     assert_eq!(path.len(), 2);
@@ -324,7 +317,6 @@ fn test_contract_path_issue_248() {
     let (path, path_info) = contract_path(
         subscripts,
         &[eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()],
-        true,
         OptimizeKind::from("optimal"),
         None,
     )
@@ -349,26 +341,25 @@ fn test_greedy_issue_248() {
     let shapes = vec![eta.clone(), eta1.clone(), m.clone(), eta.clone(), eta1.clone(), theta.clone(), theta.clone()];
 
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("optimal"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("optimal"), None).unwrap();
     println!("Time (optimal): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
 
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("greedy"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("greedy"), None).unwrap();
     println!("Time (greedy): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
 
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("dp"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("dp"), None).unwrap();
     println!("Time (dp): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
 
     let time = std::time::Instant::now();
-    let (path, path_info) =
-        contract_path(subscripts, &shapes, true, OptimizeKind::from("random-greedy-128"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("random-greedy-128"), None).unwrap();
     println!("Time (dp): {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
@@ -384,14 +375,14 @@ fn test_greedy_non_optimal() {
 
     let subscripts = "xyf,xtf,ytpf,fr->tpr";
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("greedy"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("greedy"), None).unwrap();
     println!("Time: {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");
 
     let subscripts = "xyf,xtf,ytpf,fr->tpr";
     let time = std::time::Instant::now();
-    let (path, path_info) = contract_path(subscripts, &shapes, true, OptimizeKind::from("optimal"), None).unwrap();
+    let (path, path_info) = contract_path(subscripts, &shapes, OptimizeKind::from("optimal"), None).unwrap();
     println!("Time: {:?}", time.elapsed());
     println!("{path:?}");
     println!("{path_info}");

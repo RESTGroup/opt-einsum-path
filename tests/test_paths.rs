@@ -44,7 +44,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "Unknown optimization kind: optimall")]
     fn test_bad_path_option() {
-        contract_path("a,b,c", &[vec![1], vec![2], vec![3]], true, "optimall", None).unwrap();
+        contract_path("a,b,c", &[vec![1], vec![2], vec![3]], "optimall", None).unwrap();
     }
 
     #[rstest]
@@ -57,7 +57,7 @@ mod tests {
         #[case] expected: PathType,
     ) {
         let views = build_shapes(expr, None, true).unwrap();
-        let path_ret = contract_path(expr, &views, true, name, memory_limit).unwrap();
+        let path_ret = contract_path(expr, &views, name, memory_limit).unwrap();
         assert_eq!(path_ret.0, expected);
     }
 
@@ -71,7 +71,7 @@ mod tests {
         #[case] expected: PathType,
     ) {
         let views = build_shapes(expr, None, true).unwrap();
-        let path_ret = contract_path(expr, &views, true, name, memory_limit).unwrap();
+        let path_ret = contract_path(expr, &views, name, memory_limit).unwrap();
         assert_eq!(path_ret.0, expected);
     }
 
@@ -81,17 +81,17 @@ mod tests {
         let views = build_shapes(expression, None, true).unwrap();
 
         // Test tiny memory limit
-        let path_ret = contract_path(expression, &views, true, "optimal", Some(5 as _)).unwrap();
+        let path_ret = contract_path(expression, &views, "optimal", Some(5 as _)).unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1, 2, 3, 4, 5]]);
 
-        let path_ret = contract_path(expression, &views, true, "greedy", Some(5 as _)).unwrap();
+        let path_ret = contract_path(expression, &views, "greedy", Some(5 as _)).unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1, 2, 3, 4, 5]]);
 
         // Check the possibilities, greedy is capped
-        let path_ret = contract_path(expression, &views, true, "greedy", None).unwrap();
+        let path_ret = contract_path(expression, &views, "greedy", None).unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 3], vec![0, 4], vec![0, 2], vec![0, 2], vec![0, 1]]);
 
-        let path_ret = contract_path(expression, &views, true, "greedy", None).unwrap();
+        let path_ret = contract_path(expression, &views, "greedy", None).unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 3], vec![0, 4], vec![0, 2], vec![0, 2], vec![0, 1]]);
     }
 
@@ -118,7 +118,7 @@ mod tests {
     // #[case("dp", "dcc,fce,ea,dbf->ab", vec![vec![1, 2], vec![0, 2], vec![0, 1]])]
     fn test_path_edge_cases(#[case] name: &str, #[case] expr: &str, #[case] expected: PathType) {
         let views = build_shapes(expr, None, true).unwrap();
-        let path_ret = contract_path(expr, &views, true, name, None).unwrap();
+        let path_ret = contract_path(expr, &views, name, None).unwrap();
         assert_eq!(path_ret.0, expected);
     }
 
@@ -130,7 +130,7 @@ mod tests {
     #[case("optimal", ",,->", 2)]
     fn test_path_scalar_cases(#[case] name: &str, #[case] expr: &str, #[case] expected: usize) {
         let views = build_shapes(expr, None, true).unwrap();
-        let path_ret = contract_path(expr, &views, true, name, None).unwrap();
+        let path_ret = contract_path(expr, &views, name, None).unwrap();
         assert_eq!(path_ret.0.len(), expected);
     }
 
@@ -139,9 +139,9 @@ mod tests {
         let expression = "a,ac,ab,ad,cd,bd,bc->";
         let size_dict = BTreeMap::from([('a', 20), ('b', 20), ('c', 20), ('d', 20)]);
         let edge_test4 = build_shapes(expression, Some(&size_dict), true).unwrap();
-        let path_ret = contract_path(expression, &edge_test4, true, "greedy", "max-input").unwrap();
+        let path_ret = contract_path(expression, &edge_test4, "greedy", "max-input").unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1], vec![0, 1, 2, 3, 4, 5]]);
-        let path_ret = contract_path(expression, &edge_test4, true, "optimal", "max-input").unwrap();
+        let path_ret = contract_path(expression, &edge_test4, "optimal", "max-input").unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1], vec![0, 1, 2, 3, 4, 5]]);
     }
 
@@ -150,9 +150,9 @@ mod tests {
         let expression = "abc,cfd,dbe,efa";
         let size_dict = BTreeMap::from([('a', 20), ('b', 20), ('c', 20), ('d', 20), ('e', 20), ('f', 20)]);
         let tensors = build_shapes(expression, Some(&size_dict), true).unwrap();
-        let path_ret = contract_path(expression, &tensors, true, "greedy", "max-input").unwrap();
+        let path_ret = contract_path(expression, &tensors, "greedy", "max-input").unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1, 2, 3]]);
-        let path_ret = contract_path(expression, &tensors, true, "optimal", None).unwrap();
+        let path_ret = contract_path(expression, &tensors, "optimal", None).unwrap();
         assert_eq!(path_ret.0, vec![vec![0, 1], vec![0, 2], vec![0, 1]]);
     }
 
@@ -164,7 +164,7 @@ mod tests {
             vec![1, 1, 1], // nlq
             vec![1, 1],    // pl
         ];
-        let (_, info) = contract_path(expression, &shapes, true, "dp", None).unwrap();
+        let (_, info) = contract_path(expression, &shapes, "dp", None).unwrap();
         assert_eq!(info.scale_list.iter().max(), Some(&3));
     }
 
@@ -176,7 +176,7 @@ mod tests {
             vec![2, 2, 2], // bcd
             vec![2, 2, 2], // efg
         ];
-        let (_, info) = contract_path(expression, &shapes, true, "dp", None).unwrap();
+        let (_, info) = contract_path(expression, &shapes, "dp", None).unwrap();
         println!("{info}");
         assert_eq!(info.scale_list.iter().max(), Some(&3));
     }
@@ -193,8 +193,8 @@ mod tests {
         ];
         let optimizer1 = DynamicProgramming { search_outer: false, ..Default::default() };
         let optimizer2 = DynamicProgramming { search_outer: true, ..Default::default() };
-        let (_, info1) = contract_path(expression, &shapes, true, optimizer1, None).unwrap();
-        let (_, info2) = contract_path(expression, &shapes, true, optimizer2, None).unwrap();
+        let (_, info1) = contract_path(expression, &shapes, optimizer1, None).unwrap();
+        let (_, info2) = contract_path(expression, &shapes, optimizer2, None).unwrap();
         assert!(info2.opt_cost < info1.opt_cost);
         assert_eq!(info1.opt_cost, 36 as _);
         assert_eq!(info2.opt_cost, 28 as _);
@@ -216,8 +216,8 @@ mod tests {
             vec![3],
         ];
 
-        let (_, info1) = contract_path(expression, &shapes, true, "dp-flops", None).unwrap();
-        let (_, info2) = contract_path(expression, &shapes, true, "dp-size", None).unwrap();
+        let (_, info1) = contract_path(expression, &shapes, "dp-flops", None).unwrap();
+        let (_, info2) = contract_path(expression, &shapes, "dp-size", None).unwrap();
         assert!(info1.opt_cost < info2.opt_cost);
         assert!(info1.largest_intermediate > info2.largest_intermediate);
 
@@ -259,9 +259,9 @@ mod tests {
         let opt1 = DynamicProgramming { cost_cap: true.into(), ..Default::default() };
         let opt2 = DynamicProgramming { cost_cap: false.into(), ..Default::default() };
         let opt3 = DynamicProgramming { cost_cap: Some(100 as _).into(), ..Default::default() };
-        let (_, info1) = contract_path(expression, &shapes, true, opt1, None).unwrap();
-        let (_, info2) = contract_path(expression, &shapes, true, opt2, None).unwrap();
-        let (_, info3) = contract_path(expression, &shapes, true, opt3, None).unwrap();
+        let (_, info1) = contract_path(expression, &shapes, opt1, None).unwrap();
+        let (_, info2) = contract_path(expression, &shapes, opt2, None).unwrap();
+        let (_, info3) = contract_path(expression, &shapes, opt3, None).unwrap();
         assert_eq!(info1.opt_cost, info2.opt_cost);
         assert_eq!(info1.opt_cost, info3.opt_cost);
         assert_eq!(info1.path, vec![vec![1, 2], vec![0, 3], vec![0, 2], vec![0, 1]]);
@@ -296,7 +296,7 @@ mod tests {
             vec![9, 3, 4, 8],
             vec![3],
         ];
-        let (_, info) = contract_path(expression, &shapes, true, minimize, None).unwrap();
+        let (_, info) = contract_path(expression, &shapes, minimize, None).unwrap();
         let path: PathType = path.iter().map(|(i, j)| vec![*i, *j]).collect();
         assert_eq!(info.opt_cost, cost as _);
         assert_eq!(info.largest_intermediate, width as _);
@@ -318,11 +318,11 @@ mod tests {
             vec![9, 4, 3],
             vec![8, 8, 4],
         ];
-        let (_, info) = contract_path(expression, &shapes, true, "dp-size", None).unwrap();
+        let (_, info) = contract_path(expression, &shapes, "dp-size", None).unwrap();
         let min_cost = info.largest_intermediate;
 
-        assert!(contract_path(expression, &shapes, true, "dp", min_cost).is_ok());
-        assert!(contract_path(expression, &shapes, true, "dp", min_cost - 1.0).is_err());
+        assert!(contract_path(expression, &shapes, "dp", min_cost).is_ok());
+        assert!(contract_path(expression, &shapes, "dp", min_cost - 1.0).is_err());
     }
 
     #[test]
@@ -331,7 +331,7 @@ mod tests {
         let shapes = vec![vec![10, 10], vec![10, 10], vec![10, 10], vec![10, 2]];
         let optimizers = ["branch-2", "branch-all", "optimal", "dp", "greedy"];
         for &opt in &optimizers {
-            let (path, _) = contract_path(expression, &shapes, true, opt, None).unwrap();
+            let (path, _) = contract_path(expression, &shapes, opt, None).unwrap();
             assert_eq!(path, vec![vec![2, 3], vec![0, 2], vec![0, 1]]);
         }
     }
@@ -344,7 +344,7 @@ mod tests {
             let expression: String =
                 symbols.chars().collect_vec().windows(2).map(|w| w.iter().collect::<String>()).collect_vec().join(",");
             let tensors = build_shapes(&expression, Some(&dimension_dict), true).unwrap();
-            let _ = contract_path(&expression, &tensors, true, "greedy", None).unwrap();
+            let _ = contract_path(&expression, &tensors, "greedy", None).unwrap();
         }
     }
 }

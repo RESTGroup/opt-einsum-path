@@ -58,7 +58,7 @@ fn test_large(#[case] optimizer: &str, #[case] n: u32) {
         .collect::<Vec<_>>();
 
     let time = std::time::Instant::now();
-    let (path, info) = contract_path(&einsum_str, &shapes, true, optimizer, None).unwrap();
+    let (path, info) = contract_path(&einsum_str, &shapes, optimizer, None).unwrap();
     let elapsed = time.elapsed();
 
     println!("Optimal path: {path:?}");

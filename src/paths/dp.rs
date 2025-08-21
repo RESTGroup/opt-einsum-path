@@ -40,8 +40,8 @@ impl From<Vec<usize>> for ContractionTree {
 ///
 /// # Returns
 ///
-/// A `PathType` (Vec<Vec<usize>>) representing the contraction path, where each inner Vec<usize>
-/// represents a single contraction step with the indices of tensors to contract.
+/// A [`PathType`] (`Vec<Vec<usize>>`) representing the contraction path, where each inner
+/// `Vec<usize>` represents a single contraction step with the indices of tensors to contract.
 ///
 /// The conversion process works by:
 /// 1. Processing leaf nodes (integers) first to determine their positions
