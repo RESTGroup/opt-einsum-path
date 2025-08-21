@@ -3,6 +3,11 @@ name = "opt-einsum-path"
 version = "0.1.0"
 edition = "2024"
 
+repository = "https://github.com/RESTGroup/opt-einsum-path"
+keywords = ["scientific", "einsum", "chemistry", "physics", "tensor"]
+categories = ["science"]
+license = "Apache-2.0"
+
 [dependencies]
 lazy_static = { version = "1.5" }
 itertools = { version = "0.14" }
