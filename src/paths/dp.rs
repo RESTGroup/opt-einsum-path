@@ -575,7 +575,7 @@ impl DynamicProgramming {
                                         .filter(|&&c| i2.contains(&c) && !output.contains(&c))
                                         .cloned()
                                         .collect();
-                                    if !self.search_outer && !i1_cut_i2_wo_output.is_empty() {
+                                    if self.search_outer || !i1_cut_i2_wo_output.is_empty() {
                                         dp_comp_args.compare(xn, s1, s2, term1, term2, &i1_cut_i2_wo_output);
                                     }
                                 }
