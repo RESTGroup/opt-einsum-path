@@ -232,13 +232,8 @@ pub fn contract_path(
         // incur a large memory footprint
         let remaining = if current_input_list.len() <= 20 { Some(current_input_list.clone()) } else { None };
 
-        let contraction = ContractionType {
-            indices: contract_inds.iter().join(","),
-            idx_rm: idx_removed,
-            einsum_str,
-            remaining,
-            do_blas,
-        };
+        let contraction =
+            ContractionType { indices: contract_inds, idx_rm: idx_removed, einsum_str, remaining, do_blas };
         contraction_list.push(contraction);
     }
 

@@ -2,14 +2,14 @@ use crate::*;
 
 pub type SizeType = f64;
 pub type TensorShapeType = Vec<usize>;
-pub type PathType = Vec<TensorShapeType>;
+pub type PathType = Vec<Vec<usize>>;
 pub type ArrayIndexType = BTreeSet<char>;
 pub type SizeDictType = BTreeMap<char, usize>;
 pub use crate::paths::OptimizeKind;
 
 #[derive(Debug, Clone)]
 pub struct ContractionType {
-    pub indices: String,
+    pub indices: Vec<usize>,
     pub idx_rm: ArrayIndexType,
     pub einsum_str: String,
     pub remaining: Option<Vec<String>>,
