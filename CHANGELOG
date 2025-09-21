@@ -1,0 +1,5 @@
+## v0.1.2 -- 2025-09-21
+
+API breaking change:
+
+- Change `ContractionType::indices` to `Vec<usize>` (previously `String`), which indicates terms to be contracted in a single step.

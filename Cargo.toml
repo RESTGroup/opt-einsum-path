@@ -1,6 +1,6 @@
 [package]
 name = "opt-einsum-path"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 description = "Einsum path optimization for tensor contraction (opt_einsum in Rust, without contraction)"
 readme = "readme.md"
