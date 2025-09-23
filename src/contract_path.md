@@ -119,6 +119,33 @@ Different optimizers may produce different results:
 - `true`: Equivalent to `"auto-hq"`
 - `false`: Equivalent to `"no-optimize"`
 
+#### List of path:
+
+You can also directly specify contraction path.
+
+The returned path is exactly the same to your input. No path optimization will be performed.
+
+```rust
+# use opt_einsum_path::contract_path;
+let subscripts = "qgcf,sotr,klb,jlretia,hpn,nseha,jgoqm,ipkb,cdfm,d->";
+# let shapes = vec![
+#     vec![5, 2, 9, 4],
+#     vec![4, 9, 5, 9],
+#     vec![5, 4, 2],
+#     vec![5, 4, 9, 7, 5, 3, 6],
+#     vec![5, 2, 8],
+#     vec![8, 4, 7, 5, 6],
+#     vec![5, 2, 9, 5, 8],
+#     vec![3, 2, 5, 2],
+#     vec![9, 3, 4, 8],
+#     vec![3],
+# ];
+let path_inp = [[0, 8], [3, 4], [1, 4], [5, 6], [1, 5], [0, 4], [0, 3], [1, 2], [0, 1]];
+let (path, path_info) = contract_path(subscripts, &shapes, path_inp, None).unwrap();
+assert_eq!(path, path_inp);
+# println!("{path_info}");
+```
+
 #### Custom optimizer instances:
 
 You can create and pass instances of specific optimizer structs for fine-grained control:

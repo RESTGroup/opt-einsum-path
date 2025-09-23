@@ -383,3 +383,28 @@ fn test_greedy_non_optimal() {
     println!("{path:?}");
     println!("{path_info}");
 }
+
+#[test]
+fn test_pathtype_optimizer() {
+    let subscripts = "qgcf,sotr,klb,jlretia,hpn,nseha,jgoqm,ipkb,cdfm,d->";
+    let shapes = vec![
+        vec![5, 2, 9, 4],
+        vec![4, 9, 5, 9],
+        vec![5, 4, 2],
+        vec![5, 4, 9, 7, 5, 3, 6],
+        vec![5, 2, 8],
+        vec![8, 4, 7, 5, 6],
+        vec![5, 2, 9, 5, 8],
+        vec![3, 2, 5, 2],
+        vec![9, 3, 4, 8],
+        vec![3],
+    ];
+    let path_inp = [[0, 8], [3, 4], [1, 4], [5, 6], [1, 5], [0, 4], [0, 3], [1, 2], [0, 1]];
+    let (path, path_info) = contract_path(subscripts, &shapes, path_inp, None).unwrap();
+    assert_eq!(path, path_inp);
+    println!("{path_info}");
+
+    let path_inp = vec![[0, 8], [3, 4], [1, 4], [5, 6], [1, 5], [0, 4], [0, 3], [1, 3], [0, 1]];
+    let path_inp = path_inp.iter().map(|a| a.to_vec()).collect_vec();
+    assert!(contract_path(subscripts, &shapes, path_inp.clone(), None).is_err());
+}

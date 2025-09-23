@@ -93,7 +93,7 @@ impl OptimizeKind {
     }
 }
 
-impl paths::PathOptimizer for OptimizeKind {
+impl PathOptimizer for OptimizeKind {
     fn optimize_path(
         &mut self,
         inputs: &[&ArrayIndexType],
@@ -185,3 +185,95 @@ impl PathOptimizer for bool {
         optimizer.optimize_path(inputs, output, size_dict, memory_limit)
     }
 }
+
+/* #region special impl for PathType (Vec<Vec<usize>> or related) */
+
+impl PathOptimizer for PathType {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        _output: &ArrayIndexType,
+        _size_dict: &SizeDictType,
+        _memory_limit: Option<SizeType>,
+    ) -> Result<PathType, String> {
+        // simple validation
+        {
+            let mut n = inputs.len();
+            for indices in self.iter() {
+                if indices.is_empty() {
+                    return Err("Empty path step found".to_string());
+                }
+                let mut indices = indices.to_vec();
+                indices.sort_unstable();
+                // check largest index is less than n
+                if indices.last().unwrap() >= &n {
+                    return Err(format!("Path step index {} out of bounds for {n} inputs", indices.last().unwrap()));
+                }
+                // update n by removing the contracted indices
+                n -= indices.len() - 1;
+            }
+            if n != 1 {
+                return Err(format!("Path does not reduce to single output, ended with {n} tensors"));
+            }
+        }
+        Ok(self.clone())
+    }
+}
+
+#[duplicate::duplicate_item(ImplType; [&[Vec<usize>]]; [&[&[usize]]]; [Vec<[usize; 2]>]; [&[[usize; 2]]])]
+impl PathOptimizer for ImplType {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> Result<PathType, String> {
+        let mut path = self.iter().map(|step| step.to_vec()).collect::<PathType>();
+        path.optimize_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+#[duplicate::duplicate_item(ImplType; [[Vec<usize>; N]]; [[[usize; 2]; N]])]
+impl<const N: usize> PathOptimizer for ImplType {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> Result<PathType, String> {
+        let mut path = self.iter().map(|step| step.to_vec()).collect::<PathType>();
+        path.optimize_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+#[duplicate::duplicate_item(ImplType; [Vec<(usize, usize)>]; [&[(usize, usize)]])]
+impl PathOptimizer for ImplType {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> Result<PathType, String> {
+        let mut path = self.iter().map(|step| vec![step.0, step.1]).collect::<PathType>();
+        path.optimize_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+#[duplicate::duplicate_item(ImplType; [[(usize, usize); N]])]
+impl<const N: usize> PathOptimizer for ImplType {
+    fn optimize_path(
+        &mut self,
+        inputs: &[&ArrayIndexType],
+        output: &ArrayIndexType,
+        size_dict: &SizeDictType,
+        memory_limit: Option<SizeType>,
+    ) -> Result<PathType, String> {
+        let mut path = self.iter().map(|step| vec![step.0, step.1]).collect::<PathType>();
+        path.optimize_path(inputs, output, size_dict, memory_limit)
+    }
+}
+
+/* #endregion */
