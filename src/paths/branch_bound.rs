@@ -138,19 +138,19 @@ impl BranchBound {
         }
 
         // sieve based on memory limit
-        if let Some(limit) = self.memory_limit
-            && size12 > limit
-        {
-            // terminate path here, but check all-terms contract first
-            let oversize_flops =
-                flops + paths::util::compute_oversize_flops(inputs, remaining, &self.output, &self.size_dict);
-            if oversize_flops < self.best.flops {
-                self.best.flops = oversize_flops;
-                let mut new_path = path.to_vec();
-                new_path.push(remaining.to_vec());
-                self.best.ssa_path = Some(new_path);
+        if let Some(limit) = self.memory_limit {
+            if size12 > limit {
+                // terminate path here, but check all-terms contract first
+                let oversize_flops =
+                    flops + paths::util::compute_oversize_flops(inputs, remaining, &self.output, &self.size_dict);
+                if oversize_flops < self.best.flops {
+                    self.best.flops = oversize_flops;
+                    let mut new_path = path.to_vec();
+                    new_path.push(remaining.to_vec());
+                    self.best.ssa_path = Some(new_path);
+                }
+                return None;
             }
-            return None;
         }
 
         // Calculate cost heuristic

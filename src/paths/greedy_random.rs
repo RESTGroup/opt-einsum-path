@@ -47,12 +47,11 @@ pub fn thermal_chooser(
 
     // Extract up to nbranch valid choices from the queue
     while n < nbranch && !queue.is_empty() {
-        if let Some(candidate) = queue.pop()
-            && remaining.contains_key(&candidate.k1)
-            && remaining.contains_key(&candidate.k2)
-        {
-            choices.push(candidate);
-            n += 1;
+        if let Some(candidate) = queue.pop() {
+            if remaining.contains_key(&candidate.k1) && remaining.contains_key(&candidate.k2) {
+                choices.push(candidate);
+                n += 1;
+            }
         }
     }
 

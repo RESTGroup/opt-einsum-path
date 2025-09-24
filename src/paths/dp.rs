@@ -165,9 +165,9 @@ pub fn find_disconnected_subgraphs(inputs: &[ArrayIndexType], output: &ArrayInde
 /// # Returns
 ///
 /// An iterator yielding selected elements from `seq` where the corresponding bit in `s` is set.
-pub fn bitmap_select<'t, T>(s: &BigUint, seq: &'t [T]) -> impl Iterator<Item = &'t T> {
+pub fn bitmap_select<'t, T>(s: &'t BigUint, seq: &'t [T]) -> impl Iterator<Item = &'t T> {
     let uint_1 = BigUint::from_u32(1).unwrap();
-    seq.iter().enumerate().filter(move |(i, _)| (s >> i) & &uint_1 == uint_1).map(|(_, x)| x)
+    seq.iter().enumerate().filter(move |(i, _)| (s >> i) & &uint_1 == uint_1).map(move |(_, x)| x)
 }
 
 // Calculates the effective outer indices of the intermediate tensor
@@ -700,7 +700,8 @@ fn test_bitmap_select() {
     let seq = vec![setify("A"), setify("B"), setify("C"), setify("D"), setify("E")];
 
     // Test case from Python example
-    let selected = bitmap_select(&BigUint::from(0b11010_u32), &seq).collect_vec();
+    let s = BigUint::from(0b11010_u32);
+    let selected = bitmap_select(&s, &seq).collect_vec();
     assert_eq!(selected, vec![&setify("B"), &setify("D"), &setify("E")]);
 
     // Additional test cases
