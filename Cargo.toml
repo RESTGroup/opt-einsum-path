@@ -9,6 +9,7 @@ repository = "https://github.com/RESTGroup/opt-einsum-path"
 keywords = ["scientific", "einsum", "chemistry", "physics", "tensor"]
 categories = ["science"]
 license = "Apache-2.0"
+rust-version = "1.82"
 
 [dependencies]
 lazy_static = { version = "1.5" }
